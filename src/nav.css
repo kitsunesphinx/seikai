@@ -1,0 +1,28 @@
+/* ホーム・縦タブ・レイアウト。色・余白・文字の大きさは index.css の変数だけを使う */
+:root {
+  --sidetabs-band: 2.5rem; /* 畳んだ縦タブの幅（☰ だけ） */
+  --sidetabs-width: 12rem; /* 開いた縦タブの幅 */
+}
+
+.home { text-align: center; color: var(--color-text); font-size: var(--font-size); }
+.home .entries { list-style: none; padding: 0; margin: calc(var(--space) * 3) 0; display: flex; justify-content: center; gap: calc(var(--space) * 2); flex-wrap: wrap; }
+.home .entry-button { display: block; min-width: 8em; padding: calc(var(--space) * 2) calc(var(--space) * 3); border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); text-decoration: none; }
+
+/* 全体：縦タブは画面の左端（高さいっぱい）。右は、書き出し・読み込みのボタン（画面の右上）と、今の最大幅の中身 */
+.frame { display: flex; min-height: 100vh; }
+.main-col { flex: 1; min-width: 0; }
+.content { max-width: 800px; margin: 0 auto; padding: var(--space); }
+
+/* 縦タブ。畳んだときは、左上の ☰ だけが見える（帯の背景・縦線はない。☰ の幅は、中身と重ならないよう場所だけ取る）。
+   ☰ に乗せる／キーボードで移動すると、パネル（背景と枠つき）が中身に重なって開く。固定（pinned）すると場所が広がり、中身が右にずれる */
+.sidetabs { position: sticky; top: 0; align-self: flex-start; flex: none; width: var(--sidetabs-band); height: 100vh; z-index: 10; color: var(--color-text); font-size: var(--font-size); }
+.sidetabs.pinned { width: var(--sidetabs-width); }
+.sidetabs .toggle { position: absolute; top: 0; left: 0; z-index: 12; width: var(--sidetabs-band); height: var(--sidetabs-band); border: none; background: transparent; color: var(--color-text); font-size: 1.25em; cursor: pointer; }
+.sidetabs .panel { position: absolute; top: 0; left: 0; bottom: 0; z-index: 11; box-sizing: border-box; width: var(--sidetabs-width); padding: var(--sidetabs-band) var(--space) var(--space); display: flex; flex-direction: column; overflow-y: auto; background: var(--color-bg); border-right: 1px solid var(--color-border); }
+.sidetabs .panel nav { flex: 1; }
+.sidetabs h3 { margin: var(--space) 0 calc(var(--space) / 2); color: var(--color-muted); font-size: 0.85em; font-weight: normal; }
+.sidetabs ul { list-style: none; padding: 0; margin: 0; }
+.sidetabs a { display: block; padding: calc(var(--space) / 2) var(--space); color: var(--color-text); text-decoration: none; }
+.sidetabs a[aria-current='page'] { font-weight: bold; border-left: 2px solid var(--color-text); }
+.sidetabs .bottom button { display: block; width: 100%; box-sizing: border-box; padding: calc(var(--space) / 2) var(--space); border: none; background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.sidetabs .bottom { margin-top: calc(var(--space) * 2); padding-top: var(--space); border-top: 1px solid var(--color-border); }

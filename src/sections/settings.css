@@ -1,0 +1,12 @@
+.settings { font-size: var(--font-size); color: var(--color-text); }
+.settings h3 { margin: calc(var(--space) * 2) 0 var(--space); }
+.settings h4 { margin: var(--space) 0; }
+.settings .error { color: var(--color-error); }
+.settings .note { color: var(--color-muted); font-size: 0.85em; }
+.settings ol { padding-left: calc(var(--space) * 3); margin: var(--space) 0; }
+.settings li { margin-bottom: var(--space); }
+.settings li.inactive .name { color: var(--color-muted); }
+.settings li .name { margin-right: var(--space); }
+.settings form { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; margin: var(--space) 0; }
+.settings input { width: 5em; text-align: right; }
+.settings .columns { display: flex; gap: calc(var(--space) * 4); flex-wrap: wrap; }

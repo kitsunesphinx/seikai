@@ -1,0 +1,10 @@
+/* 予算の画面。表・月の選択・色の基本は balance.css（.report）を共用する */
+.budgets .budget-table { margin-bottom: var(--space); }
+.budgets tr.over td { color: var(--color-error); } /* 上限の超過の行 */
+.budgets form { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; margin: var(--space) 0; }
+.budgets details.inactive summary { color: var(--color-muted); }
+.budgets ul { list-style: none; padding: 0; margin: var(--space) 0; }
+.budgets li { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--color-border); padding: var(--space) 0; }
+.budgets li .start { min-width: 8em; }
+.budgets li .amount { min-width: 8em; text-align: right; font-variant-numeric: tabular-nums; }
+.budgets li input { width: 8em; text-align: right; }

@@ -1,0 +1,28 @@
+:root {
+  --color-bg: #ffffff;
+  --color-text: #222222;
+  --color-muted: #888888;
+  --color-border: #cccccc;
+  --color-error: #c00000;
+  --color-warn-bg: #fff3b0;
+  --space: 8px;
+  --font-size: 16px;
+}
+
+body { font-family: sans-serif; margin: 0; } /* 中身の最大幅（800px）は、nav.css の .content が持つ。縦タブは画面の左端 */
+header { display: flex; justify-content: flex-end; border-bottom: 1px solid var(--color-border); padding: var(--space); }
+
+.migration {
+  background: var(--color-warn-bg);
+  border: 1px solid var(--color-border);
+  padding: var(--space);
+  font-size: var(--font-size);
+}
+
+/* 読み込みの警告（エラーではない：一部の項目だけ無視した） */
+.warning {
+  background: var(--color-warn-bg);
+  border: 1px solid var(--color-border);
+  padding: var(--space);
+  white-space: pre-line;
+}
