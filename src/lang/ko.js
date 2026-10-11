@@ -11,7 +11,7 @@ export default {
   'language.renameUncheckAll': '전체 해제',
 
   // ホーム・縦タブ
-  'home.title': '가계부',
+  'home.title': '정해(正解)', // 漢字を含む。text.check.js の KANJI_KEYS_IN_KO で許している
   'nav.toHome': '홈으로',
   'nav.menu': '메뉴',
 

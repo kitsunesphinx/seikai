@@ -59,16 +59,15 @@ export function t(key, vars) {
   return translate(dictionaries, current, key, vars)
 }
 
-// 言語を変える。覚えて、html の lang とタブの題を合わせる。画面の描き直しは、呼ぶ側（App）が行う
+// 言語を変える。覚えて、html の lang を合わせる。画面の描き直しは、呼ぶ側（App）が行う。タブの題は index.html で決める（言語で変えない。仕様 6.10.1）
 export function setLanguage(language) {
   current = parseLanguage(language)
   if (browserStorage()) saveLanguage(browserStorage(), current)
   applyDocumentLanguage()
 }
 
-// html の lang と、ブラウザのタブの題を、今の言語に合わせる。document がなければ（node など）何もしない
+// html の lang を、今の言語に合わせる。document がなければ（node など）何もしない
 export function applyDocumentLanguage() {
   if (typeof document === 'undefined') return
   document.documentElement.lang = current
-  document.title = t('home.title')
 }

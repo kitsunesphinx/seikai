@@ -2,7 +2,7 @@
 // 17(b) で ko.js を足す。辞書にない言葉は日本語で出す（その仕組みは text.js）。
 export default {
   // ホーム・縦タブ
-  'home.title': '俺の嫁',
+  'home.title': '正解',
   'nav.toHome': 'ホームへ',
   'nav.menu': 'メニュー',
 

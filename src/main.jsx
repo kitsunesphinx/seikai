@@ -4,7 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { applyDocumentLanguage } from './text.js'
 
-applyDocumentLanguage() // 覚えてある言語に、html の lang とタブの題を合わせる（描く前に）
+applyDocumentLanguage() // 覚えてある言語に、html の lang を合わせる（描く前に）
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
