@@ -1,6 +1,11 @@
 .settings { font-size: var(--font-size); color: var(--color-text); }
-.settings h3 { margin: calc(var(--space) * 2) 0 var(--space); }
-.settings h4 { margin: var(--space) 0; }
+/* 見出しの大きさ・太さ・余白は、タグ（h3・h4…）ではなく、クラスで決める（作業21：見出しのタグを1段ずつ下げても、見た目が変わらないように）。
+   項目の見出し（set-title）と項目の中の見出し（sub-title）は、今までの h3 と同じ。項目の中の小見出し（sub-sub）は、今までの h4 と同じ */
+.settings .set-title, .settings .sub-title { font-size: 1.17em; font-weight: bold; margin: calc(var(--space) * 2) 0 var(--space); }
+.settings .sub-sub { font-size: 1em; font-weight: bold; margin: var(--space) 0; }
+/* 危ない操作（仕訳の一括削除・全体の初期化）：エラーの色の枠で囲む（spec-ui.md 4.1）。線は 2px。色は --color-error（7つの見た目すべてで、地との比が 3:1 以上。themes.check.js が 4.5:1 以上を確かめている） */
+.settings .set-danger { border: 2px solid var(--color-error); border-radius: 4px; padding: 0 var(--space) var(--space); margin: calc(var(--space) * 2) 0; }
+.settings .set-danger .set-title { margin-top: var(--space); }
 .settings .error { color: var(--color-error); }
 .settings .note { color: var(--color-muted); font-size: 0.85em; }
 .settings ol { padding-left: calc(var(--space) * 3); margin: var(--space) 0; }
@@ -8,5 +13,35 @@
 .settings li.inactive .name { color: var(--color-muted); }
 .settings li .name { margin-right: var(--space); }
 .settings form { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; margin: var(--space) 0; }
-.settings input { width: 5em; text-align: right; }
+.settings input.limit { width: 5em; text-align: right; }
 .settings .columns { display: flex; gap: calc(var(--space) * 4); flex-wrap: wrap; }
+.settings .display-row { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; margin: var(--space) 0; }
+.settings input[type='range'] { width: 12em; }
+.settings .swatch { display: inline-block; width: 1.25em; height: 1.25em; border: 1px solid var(--color-muted); border-radius: 3px; vertical-align: middle; }
+.settings input[type='color'] { width: 3em; height: 2em; padding: 0; text-align: left; vertical-align: middle; }
+.settings .quick-colors button { display: inline-flex; gap: calc(var(--space) / 2); align-items: center; }
+.settings .quick-colors button[aria-pressed='true'] { font-weight: bold; }
+
+/* ---- スマホの形（spec-mobile.md 第6章。layout.js の PHONE_QUERY・entries.css などと同じ条件。変えるときは全部） ----
+   （作業21：項目の開閉をやめ、グループのタブに変えた。ここには、スマホだけの項目の中身の規則が残る） */
+@media screen and (max-width: 959.98px), screen and (pointer: coarse) and (hover: none) {
+  /* 「日付の開き方」：スマホの幅も PC の幅も、文字が上、選択ボックスが下にそろえる */
+  .settings .open-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0 0 var(--space); }
+  .settings .open-mode select { max-width: 100%; }
+  /* 照会 → クレカ（10.3 の 3）：「・」なし。1行目にカード名、2行目に締め日、3行目に引き落とし日と「保存」。入力欄の左端は、ラベルの幅をそろえてそろえる。日の欄は 2桁の幅（定期支払いの日の欄と同じ 3em） */
+  .settings .card-list { list-style: none; padding: 0; margin: var(--space) 0; }
+  .settings .card-row form > strong { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .settings .card-row form > label { display: flex; align-items: center; gap: var(--space); }
+  .settings .card-row form > label:first-of-type { flex: 1 1 100%; }
+  .settings .card-row .lbl { display: inline-block; min-width: 6.5em; }
+  .settings .card-row input.day { width: 3em; flex: none; }
+  .settings .card-row form > .error, .settings .card-row form > .note:not(:nth-child(2)) { flex: 1 1 100%; }
+  /* 記帳 → お気に入り（10.3 の 4）：選択ボックスと「追加」を1行。選択ボックスは残りの幅（長い科目名は箱の中で切れる。幅は広げない） */
+  .settings form.fav-add select { flex: 1 1 0; min-width: 0; max-width: 100%; }
+  .settings form.fav-add button { flex: none; }
+  .settings form.fav-add .error { flex: 1 1 100%; }
+  /* お気に入りの一覧の「上へ」「下へ」「解除」：間は 8px（決まり1）。li の display は変えない（番号を残す） */
+  .settings li.fav-item > button { margin: 2px var(--space) 2px 0; }
+  /* 書き出し・読み込み：間は 8px */
+  .settings .backup-row { display: flex; flex-wrap: wrap; gap: var(--space); }
+}

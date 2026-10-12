@@ -88,7 +88,7 @@ export const buildSaveFile = (data, { kind, savedAt, memo }) => ({
 
 const isObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-// ロード用の検証。成功: { file, data, warnings }（data は今の読み込みと同じ検証と移行を通した v7）/ 失敗: { error, status }（status は 'newer' か 'broken'）
+// ロード用の検証。成功: { file, data, warnings }（data は今の読み込みと同じ検証と移行を通した今の版）/ 失敗: { error, status }（status は 'newer' か 'broken'）
 export function checkSaveFile(text) {
   const broken = (detail) => ({ error: detail ? t('common.withDetail', { message: SAVE_ERRORS.unreadable, detail }) : SAVE_ERRORS.unreadable, status: 'broken' })
   let file

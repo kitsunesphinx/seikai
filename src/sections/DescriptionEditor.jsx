@@ -5,7 +5,7 @@ import { t } from '../text.js'
 function Row({ stage, text, active, current, onSave }) {
   const [draft, setDraft] = useState(text)
   return (
-    <li style={active ? { background: '#fff3b0' } : undefined}>
+    <li style={active ? { background: 'var(--color-mark-bg)' } : undefined}>
       <b>{(stage / 10).toFixed(1)}</b>
       {active && ` ${t('skills.activeMark')}`}
       {current && ` ${t('skills.currentStage')}`}

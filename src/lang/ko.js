@@ -2,7 +2,33 @@
 // 訳は、母の韓国語版（gagyebu-public）の言葉を元にする。口調は 합니다체。科目の名前（データ）と「円」は日本語のまま（17(c) で扱う）。
 export default {
   'language.title': '언어',
-  'balanceView.title': '잔액 표시',
+  'balanceView.title': '자유롭게 쓸 수 있는 돈의 처음 표시',
+
+  // 설정 → 표시（見た目）
+  'theme.title': '표시',
+  'theme.preset': '테마',
+  'theme.basic': '기본',
+  'theme.gunjo': '군청',
+  'theme.shinbu': '최심부',
+  'theme.seizu': '성도',
+  'theme.prism': '프리즘',
+  'theme.merchant': '상인',
+  'theme.kousou': '광조',
+  'theme.accent': '메인 컬러',
+  'theme.accentSample': '미리보기',
+  'theme.accentPick': '색 고르기',
+  'theme.accentReset': '기본 색으로 되돌리기',
+  'theme.accentLighter': '읽기 쉽도록 색을 조금 밝게 했습니다',
+  'theme.accentDarker': '읽기 쉽도록 색을 조금 어둡게 했습니다',
+  'theme.accent.pink': '분홍',
+  'theme.accent.purple': '보라',
+  'theme.accent.blue': '파랑',
+  'theme.accent.red': '빨강',
+  'theme.accent.jade': '비취',
+  'theme.menuOpacity': '메뉴 불투명도',
+  'theme.percent': '{value}%',
+  'theme.reset': '기본값으로 되돌리기({value}%)',
+  'theme.menuOpacityNote': '낮추면 메뉴 글자가 읽기 어려워질 수 있습니다',
   'language.ja': '日本語', // 言語の名前は、どちらの言語でも自分の言語の字で出す
   'language.ko': '한국어',
   'language.renameConfirm': '언어를 바꿉니다. 초기 계정과목의 이름을 새 언어의 이름으로 바꿀 수 있습니다. 바꿀 계정과목에 체크해 주세요(체크를 해제한 계정과목은 지금 이름 그대로입니다).',
@@ -98,7 +124,6 @@ export default {
   'common.edit': '편집',
   'common.delete': '삭제',
   'common.rename': '이름 변경',
-  'common.cancel': '취소',
   'common.enable': '사용',
   'common.disable': '사용 안 함',
   'common.inactive': '(사용 안 함)', // 科目・定期支払いの名前の後ろ。前の空白は画面側
@@ -124,6 +149,20 @@ export default {
   'entries.kind.adjustment': '잔액 조정',
   'entries.kindNote': '({kind})',
   'entries.deleteConfirm': '이 분개를 삭제합니다. 되돌릴 수 없습니다. 먼저 내보내 두시기를 권합니다.',
+  'entries.dayHead': '{md}（{wd}）　{count}건',
+  'entries.pairSeparator': '／', // 一覧のカードの 借方科目／貸方科目 の区切り
+  'entries.dayLabel': '{md}（{wd}）',
+  'entries.sheetTitle': '분개 편집',
+  'entries.sheetNth': '{date} {n}번째',
+  'entries.sheetClose': '취소',
+  'entries.discardConfirm': '변경 사항을 버리시겠습니까?',
+  'common.weekday0': '일', 'common.weekday1': '월', 'common.weekday2': '화', 'common.weekday3': '수', 'common.weekday4': '목', 'common.weekday5': '금', 'common.weekday6': '토',
+  'entries.openModePhone': '날짜 펼치기 (스마트폰 너비)',
+  'entries.openModePc': '날짜 펼치기 (PC 너비)',
+  'entries.openMode.latest': '가장 최근 날짜만 펼치기',
+  'entries.openMode.all': '모두 펼치기',
+  'entries.openMode.none': '모두 접기',
+  'settings.entriesHeading': '분개',
 
   // 定期支払い（Subscriptions）
   'subscriptions.title': '정기 지출',
@@ -153,6 +192,7 @@ export default {
   'adjustment.title': '잔액 조정',
   'adjustment.note': '계정과목의 \'실제 잔액\'을 입력하면, 기록상 잔액과의 차액이 조정이익・조정손실로 기록됩니다(날짜는 오늘).',
   'adjustment.optionLabel': '{name}(기록상 {balance})',
+  'adjustment.current': '기록상 잔액 {balance}', // スマホ：科目を選んだあと、選択ボックスの下に出す
   'adjustment.actual': '실제 잔액',
   'adjustment.submit': '조정하기',
   'adjustment.same': '{name}은(는) 기록상 잔액과 같습니다(차액이 0이라 기록하지 않습니다)',
@@ -170,6 +210,7 @@ export default {
   'balance.freeClose': ')',
   'balance.unbalanced': '차변 합계와 대변 합계가 맞지 않습니다. 존재하지 않는 계정과목을 가리키는 분개가 없는지 확인해 주세요.',
   'balance.title': '잔액',
+  'balance.rowSub': '차변 {debit}　대변 {credit}', // スマホの2行目
   'balance.debitTotal': '차변 합계',
   'balance.creditTotal': '대변 합계',
   'balance.note': '잔액: 자산은 \'차변 합계 − 대변 합계\', 부채는 \'대변 합계 − 차변 합계\'입니다.',
@@ -186,6 +227,8 @@ export default {
   'savings.noAccounts': '따로 모아 두는 계정과목이 없습니다',
   'savings.noRecords': '아직 기록이 없습니다',
   'savings.cumulative': '누계',
+  'savings.in': '적립', // スマホの貯蓄の1行目：金額の前（借方に入った仕訳）
+  'savings.out': '인출', // 同じく、貸方に入った仕訳
   'savings.note': '차변에 들어간 분개는 \'따로 모아 둠(+)\', 대변에 들어간 분개는 \'꺼내 씀(−)\'입니다.',
 
   // 月次（Monthly）
@@ -195,6 +238,10 @@ export default {
   'monthly.printView': '인쇄용 보기',
   'monthly.print': '인쇄하기',
   'monthly.back': '돌아가기',
+  'living.option': '{month}월 생활비',
+  'living.same': '받은 달 생활비',
+  'living.next': '다음 달 생활비',
+  'living.month': '생활 월',
   'monthly.issued': '{year}년 {month}월 {day}일 발행',
   'monthly.printNote': '인쇄 대상을 \'PDF로 저장\'으로 하면 PDF로 만들 수 있습니다.',
   'monthly.summaryTitle': '월 집계({month})',
@@ -203,6 +250,13 @@ export default {
   'monthly.expenseTotal': '비용 합계',
   'monthly.adjustmentLine': '잔액 조정(조정이익 − 조정손실)',
   'monthly.noteSummary': '시작 잔액은 수입에도 지출에도 포함하지 않습니다. 잔액 조정은 보통의 손익과는 별도의 행입니다.',
+  'monthly.livingTitle': '생활 수지',
+  'monthly.livingNote': '(그달 생활에 쓰는 수입 − 그달 지출)',
+  'monthly.livingIncomeTotal': '수입 합계',
+  'monthly.livingExpenseTotal': '지출 합계',
+  'monthly.livingNone': '이달 생활비가 되는 수입이 없습니다',
+  'living.prevPaid': '지난달 입금',
+  'living.thisPaid': '이번 달 입금',
   'monthly.plTitle': '손익계산서(P/L)({month})',
   'monthly.bsTitle': '재무상태표(B/S)({month} 말 기준)',
   'monthly.unit': '(단위: {unit})',
@@ -258,7 +312,11 @@ export default {
   'budgets.over': '초과',
   'budgets.achieved': '달성',
   'budgets.notAchieved': '미달성',
+  'budgets.rowSubLimit': '실적 {actual}／예산 {budget}　남은 금액 {remaining}　달성률 {rate}%', // スマホの2行目（上限）
+  'budgets.rowSubGoal': '실적 {actual}／목표 {budget}　부족 {shortfall}　달성률 {rate}%', // スマホの2行目（目標）
   'budgets.addTitle': '예산 추가',
+  'budgets.tabMonth': '월 예산',
+  'budgets.tabManage': '등록・이력',
   'budgets.kind': '종류',
   'budgets.startMonth': '적용 시작월',
   'budgets.note': '어떤 달의 예산은 그 계정과목의 예산 중, 적용 시작월이 그 달 이전이고 가장 새로운 것입니다. 적용 시작월을 바꾸고 싶을 때는 삭제하고 다시 입력해 주세요.',
@@ -281,7 +339,7 @@ export default {
   'ledger.noteLocked': '계산에 쓰이는 계정과목이라 삭제・사용 안 함 설정・구분 변경은 할 수 없습니다(이름은 바꿀 수 있습니다)',
   'ledger.noteInUse': '분개・정기 지출・예산에서 쓰고 있어 삭제와 구분 변경은 할 수 없습니다. \'사용 안 함\'으로 하면 숨길 수 있습니다',
   'ledger.noteCard': '카드는 구분을 바꿀 수 없습니다. 마감일・결제일은 설정 → 카드에서 바꿀 수 있습니다',
-  'ledger.noteBudget': '예산이 있어 role도 바꿀 수 없습니다. 예산을 모두 삭제하면 바꿀 수 있게 됩니다',
+  'ledger.noteBudget': '예산이 있어 역할도 바꿀 수 없습니다. 예산을 모두 삭제하면 바꿀 수 있게 됩니다',
 
   // 設定（Settings、CardSettings、DataSettings）
   'settings.title': '설정',
@@ -305,10 +363,12 @@ export default {
   'settings.times': '{count}회',
   'settings.registered': '★등록됨',
   'settings.frequentNote': '이번 달・지난달・지지난달의 일반 분개(시작 잔액・잔액 조정은 세지 않습니다)에서, 사용된 횟수가 많은 순으로 5건입니다.',
+  'settings.group.general': '일반',
   'settings.dataHeading': '데이터',
   'cardSettings.closingAria': '{name}의 마감일',
   'cardSettings.payAria': '{name}의 결제일',
   'cardSettings.note': '카드별 마감일과 결제일(1~31)입니다. 그 달에 없는 날은 말일로 처리합니다. 바꾸면 과거 청구 기간의 구분도 다시 계산됩니다(분개는 바뀌지 않습니다).',
+  'dataSettings.backupTitle': '내보내기・가져오기',
   'dataSettings.purgeTitle': '분개 일괄 삭제',
   'dataSettings.purgeNote': '월을 고르면 그 달의, \'전체 기간\'을 고르면 모든 분개를 종류에 관계없이(시작 잔액・잔액 조정도) 삭제합니다.',
   'dataSettings.monthAria': '삭제할 월',
@@ -347,6 +407,11 @@ export default {
   'app.exportDo': '내보내기',
   'app.migrate': '옮기기',
   'app.notFound': '화면을 찾을 수 없습니다',
+  'app.newerData': '새 버전의 데이터입니다. 업데이트해 주세요.',
+  'pwa.updateAvailable': '새 버전이 있습니다',
+  'pwa.update': '업데이트',
+  'pwa.version': '버전: {version}',
+  'pwa.versionUnknown': '알 수 없음',
 
   // 区分・role・予算の種類の名前
   // 초기 계정과목의 이름(사양 6.5). ledgerLogic.js의 초기 계정과목 표가 사용합니다

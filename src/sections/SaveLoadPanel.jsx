@@ -6,13 +6,15 @@ import { nowLocal } from '../today.js'
 import { SLOTS, SAVE_ERRORS, slotView, lastSaveText, validateMemo, buildSaveFile, checkSaveFile, storeErrorText } from '../saveLogic.js'
 import { folderStatus, readSlots, readSlot, writeSlot, deleteSlot } from '../saveStore.js'
 import { useConfirm } from './ConfirmDialog.jsx'
+import { usePhone } from '../layout.js'
 
 const SETTINGS_HASH = toHash({ entry: 'ledger', tab: 'settings', detailId: null })
 
 // セーブ画面（mode 'save'）とロード画面（mode 'load'）。今の画面の上に重ねて出す（標準の <dialog>。外を押しても閉じない。閉じるのは「閉じる」と Esc。# が変わったら App が閉じる）。
 // スロットの読み書きは saveStore、判定と整形は saveLogic。ここは出すだけ
-export default function SaveLoadPanel({ mode, data, onClose, onLoad }) {
+export default function SaveLoadPanel({ mode, data, onClose, onLoad, onToSettings }) {
   const confirm = useConfirm()
+  const phone = usePhone()
   const dialogRef = useRef(null)
   const [status, setStatus] = useState(null) // { state, name }。確かめるまでは null
   const [slots, setSlots] = useState(null) // { file, label, kind, view }[]。読むまでは null
@@ -132,7 +134,7 @@ export default function SaveLoadPanel({ mode, data, onClose, onLoad }) {
   } else if (status.state === 'unsupported') {
     body = <p className="note">{t('save.unsupported')}</p>
   } else if (status.state === 'none') {
-    body = <p>{t('save.chooseFirst')} <a href={SETTINGS_HASH} onClick={onClose}>{t('save.toSettings')}</a></p>
+    body = <p>{t('save.chooseFirst')} <a href={SETTINGS_HASH} onClick={() => { onToSettings('data'); onClose() }}>{t('save.toSettings')}</a></p>
   } else if (status.state === 'prompt') {
     body = <p>{t('save.needPermission')} <button type="button" onClick={() => open(true)}>{t('save.grant')}</button></p>
   } else if (status.state === 'denied') {
@@ -187,6 +189,8 @@ export default function SaveLoadPanel({ mode, data, onClose, onLoad }) {
       {message && <p className="note">{message}</p>}
       {error && <p className="error">{error}</p>}
       {body}
+      {/* スマホの形：長い一覧の一番下にも「閉じる」（spec-mobile.md 第6章） */}
+      {phone && <div className="foot"><button type="button" onClick={onClose}>{t('save.close')}</button></div>}
     </dialog>
   )
 }

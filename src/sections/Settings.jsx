@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import './settings.css'
 import CardSettings from './CardSettings.jsx'
-import DataSettings from './DataSettings.jsx'
+import { BackupSettings, PurgeSettings, ResetSettings } from './DataSettings.jsx'
 import SaveSettings from './SaveSettings.jsx'
+import DisplaySettings from './DisplaySettings.jsx'
 import { t, LANGUAGES } from '../text.js'
 import { useConfirm } from './ConfirmDialog.jsx'
 import { BALANCE_VIEWS, BALANCE_VIEW_LABELS, loadBalanceView, rememberBalanceView } from '../storage.js'
@@ -11,6 +12,11 @@ import {
   validateFavoriteLimit, setFavoriteLimit, CURRENCIES, setCurrency, renameRows, applyRenames,
 } from '../ledgerLogic.js'
 import { today } from '../today.js'
+import { OPEN_MODES, OPEN_MODE_LABELS, loadOpenMode, rememberOpenMode } from '../entryView.js'
+import { SETTINGS_GROUPS, SETTINGS_SECTIONS, tabDomId, panelDomId } from '../settingsSections.js'
+import Tabs from './Tabs.jsx'
+import { versionLabel, BUILT_AT, CURRENT_BUILD } from '../pwa.js'
+import { usePhone } from '../layout.js'
 
 const SIDE_KEYS = { debit: 'common.debit', credit: 'common.credit' } // 借方・貸方の名前（辞書のキー）
 const LANGUAGE_KEYS = { ja: 'language.ja', ko: 'language.ko' } // 言語の名前（辞書のキー。どちらの言語でも、自分の言語の字で出す）
@@ -52,6 +58,25 @@ function RenameList({ rows, chosen }) {
   )
 }
 
+// 仕訳の日付の枠の開き方（spec-mobile.md 5.3）。スマホの幅と PC の幅を、別々に選ぶ。ブラウザごとに覚える（保存データには入れない）。変えたらすぐ覚える
+function OpenModeSelect({ side, label }) {
+  const [mode, setMode] = useState(() => loadOpenMode(side))
+  const change = (next) => {
+    rememberOpenMode(side, next)
+    setMode(next)
+  }
+  return (
+    <div>
+      <label className="open-mode">
+        {label}{' '}
+        <select value={mode} onChange={(e) => change(e.target.value)}>
+          {OPEN_MODES.map((m) => <option key={m} value={m}>{t(OPEN_MODE_LABELS[m])}</option>)}
+        </select>
+      </label>
+    </div>
+  )
+}
+
 // 借方・貸方の1つ分：登録済みの一覧（上下ボタン・解除）、追加、上限、「よく使う」
 function FavoriteSide({ side, data, update }) {
   const { accounts, settings } = data
@@ -88,14 +113,14 @@ function FavoriteSide({ side, data, update }) {
 
   return (
     <section>
-      <h3>{t('settings.favoriteOf', { side: sideName })}</h3>
+      <h4 className="sub-title">{t('settings.favoriteOf', { side: sideName })}</h4>
       {registered.length === 0 ? <p className="note">{t('settings.noFavorites')}</p> : (
         <ol>
           {registered.map((id, i) => {
             const account = accountOf(id)
             if (!account) return null
             return (
-              <li key={id} className={account.active ? '' : 'inactive'}>
+              <li key={id} className={account.active ? 'fav-item' : 'fav-item inactive'}>
                 <span className="name">{account.name}{!account.active && <span className="note"> {t('common.inactive')}</span>}</span>
                 <button type="button" disabled={i === 0} onClick={() => save(moveFavorite(settings, side, id, -1))}>{t('settings.up')}</button>
                 <button type="button" disabled={i === registered.length - 1} onClick={() => save(moveFavorite(settings, side, id, 1))}>{t('settings.down')}</button>
@@ -105,7 +130,7 @@ function FavoriteSide({ side, data, update }) {
           })}
         </ol>
       )}
-      <form onSubmit={add}>
+      <form className="fav-add" onSubmit={add}>
         <select aria-label={t('settings.addAria', { side: sideName })} value={addId} onChange={(e) => setAddId(e.target.value)}>
           <option value="">{t('settings.chooseAdd')}</option>
           {groupByType(candidates).map((g) => (
@@ -119,7 +144,7 @@ function FavoriteSide({ side, data, update }) {
       </form>
       <form onSubmit={saveLimit}>
         <label>
-          {t('settings.limit')}{' '}<input inputMode="numeric" aria-label={t('settings.limitAria', { side: sideName })} value={limitText} onChange={(e) => setLimitText(e.target.value)} placeholder={t('settings.none')} />{' '}{t('settings.countUnit')}
+          {t('settings.limit')}{' '}<input className="limit" inputMode="numeric" aria-label={t('settings.limitAria', { side: sideName })} value={limitText} onChange={(e) => setLimitText(e.target.value)} placeholder={t('settings.none')} />{' '}{t('settings.countUnit')}
         </label>
         <button>{t('common.save')}</button>
         {limitError && <span className="error">{limitError}</span>}
@@ -136,11 +161,11 @@ function Frequent({ data }) {
   const stats = favoriteStats(entries, accounts, today())
   return (
     <section>
-      <h3>{t('settings.frequentTitle')}</h3>
+      <h4 className="sub-title">{t('settings.frequentTitle')}</h4>
       <div className="columns">
         {['debit', 'credit'].map((side) => (
           <div key={side}>
-            <h4>{t(SIDE_KEYS[side])}</h4>
+            <h5 className="sub-sub">{t(SIDE_KEYS[side])}</h5>
             {stats[side].length === 0 ? <p className="note">{t('settings.frequentNone')}</p> : (
               <ol>
                 {stats[side].map((r) => (
@@ -159,9 +184,9 @@ function Frequent({ data }) {
   )
 }
 
-export default function Settings({ data, update, openPanel, replaceData, autosave, autosaveBeforeReplace, language, onChangeLanguage }) {
+export default function Settings({ data, update, openPanel, replaceData, autosave, autosaveBeforeReplace, language, onChangeLanguage, onExport, onImport, tab, onTab }) {
   const confirm = useConfirm()
-  // 残高の表示：残高の画面で、自由に使える額を最初にどちらで出すか。ブラウザごとに覚える（保存データには入れない）。変えたらすぐ覚える（確認画面なし）
+  // 自由に使える額の初めの表示：残高の画面で、自由に使える額を最初にどちらで出すか。ブラウザごとに覚える（保存データには入れない）。変えたらすぐ覚える（確認画面なし）
   const [balanceView, setBalanceView] = useState(loadBalanceView)
   const changeBalanceView = (view) => {
     rememberBalanceView(view)
@@ -184,32 +209,65 @@ export default function Settings({ data, update, openPanel, replaceData, autosav
     if (!(await confirm({ message: t('currency.confirm') }))) return
     update({ ...data, settings: setCurrency(data.settings, next) })
   }
-  return (
-    <div className="settings">
-      <h2>{t('settings.title')}</h2>
-      <h3>{t('language.title')}</h3>
+  const phone = usePhone()
+
+  // 項目の中身（id → 中身）。並びと見出しは settingsSections.js。項目を足すときは、そちらと、ここの両方に足す（settingsSections.check.js が合っているか見る）
+  const BODIES = {
+    language: () => (
       <select aria-label={t('language.title')} value={language} onChange={(e) => changeLanguage(e.target.value)}>
         {LANGUAGES.map((code) => <option key={code} value={code}>{t(LANGUAGE_KEYS[code])}</option>)}
       </select>
-      <h3>{t('currency.title')}</h3>
+    ),
+    currency: () => (
       <select aria-label={t('currency.title')} value={data.settings.currency} onChange={(e) => changeCurrency(e.target.value)}>
         {Object.entries(CURRENCIES).map(([code, currency]) => <option key={code} value={code}>{currency.unit}</option>)}
       </select>
-      <h3>{t('balanceView.title')}</h3>
+    ),
+    balanceView: () => (
       <select aria-label={t('balanceView.title')} value={balanceView} onChange={(e) => changeBalanceView(e.target.value)}>
         {BALANCE_VIEWS.map((v) => <option key={v} value={v}>{t(BALANCE_VIEW_LABELS[v])}</option>)}
       </select>
-      <h3>{t('settings.favoritesHeading')}</h3>
-      <p className="note">{t('settings.favoritesNote')}</p>
-      <FavoriteSide side="debit" data={data} update={update} />
-      <FavoriteSide side="credit" data={data} update={update} />
-      <Frequent data={data} />
-      <h3>{t('card.title')}</h3>
-      <CardSettings data={data} update={update} />
-      <h3>{t('save.title')}</h3>
-      <SaveSettings autosave={autosave} />
-      <h3>{t('settings.dataHeading')}</h3>
-      <DataSettings data={data} update={update} openPanel={openPanel} replaceData={replaceData} autosaveBeforeReplace={autosaveBeforeReplace} />
+    ),
+    display: () => <DisplaySettings />,
+    entries: () => (
+      <>
+        <OpenModeSelect side="phone" label={t('entries.openModePhone')} />
+        <OpenModeSelect side="pc" label={t('entries.openModePc')} />
+      </>
+    ),
+    favorites: () => (
+      <>
+        <p className="note">{t('settings.favoritesNote')}</p>
+        <FavoriteSide side="debit" data={data} update={update} />
+        <FavoriteSide side="credit" data={data} update={update} />
+        <Frequent data={data} />
+      </>
+    ),
+    card: () => <CardSettings data={data} update={update} />,
+    save: () => <SaveSettings autosave={autosave} />,
+    backup: () => <BackupSettings onExport={onExport} onImport={onImport} />,
+    purge: () => <PurgeSettings data={data} update={update} openPanel={openPanel} autosaveBeforeReplace={autosaveBeforeReplace} />,
+    reset: () => <ResetSettings openPanel={openPanel} replaceData={replaceData} />,
+  }
+
+  // タブ（spec-ui.md 4.1）：設定の画面の上にグループのタブを並べ、押したタブの項目だけを出す（PC もスマホも同じ。項目は開閉しない）。
+  // 作り（role・aria・左右の矢印・Home・End）は共通の Tabs.jsx。開いているタブは App の状態（tab・onTab。覚えない）。
+  // 見出しの階層：設定の題 h2 → 項目 h3 → 項目の中の見出し h4・h5。タブは見出しでなく、グループの名前は、パネルの aria-labelledby で伝わる。
+  // 見た目は、クラス（set-title・sub-title・sub-sub）で決める（タグの大きさに頼らない）
+  const items = SETTINGS_SECTIONS.filter((s) => s.group === tab && (phone || !s.phoneOnly)) // スマホの形だけの項目（書き出し・読み込み）は、PC では出さない
+  return (
+    <div className="settings">
+      <h2>{t('settings.title')}</h2>
+      <Tabs label={t('settings.title')} tabs={SETTINGS_GROUPS.map((g) => ({ id: g.id, title: t(g.title) }))} current={tab} onChange={onTab} prefix="settings" />
+      <div role="tabpanel" id={panelDomId(tab)} aria-labelledby={tabDomId(tab)} className="set-panel">
+        {items.map(({ id, title, danger }) => {
+          const item = <><h3 className="set-title">{t(title)}</h3>{BODIES[id]()}</>
+          // 危ない操作（仕訳の一括削除・全体の初期化）は、エラーの色の枠で囲む（ボタンの動き・確認画面は変えない）。ほかの項目は、枠も囲みも足さない
+          return danger ? <div key={id} className="set-danger">{item}</div> : <Fragment key={id}>{item}</Fragment>
+        })}
+        {/* 一般のタブの一番下に、今の版（ビルドした日時）を小さく出す。更新できたかを確かめるため（spec-pwa.md 5章） */}
+        {tab === 'general' && <p className="note app-version">{t('pwa.version', { version: versionLabel(BUILT_AT, CURRENT_BUILD) ?? t('pwa.versionUnknown') })}</p>}
+      </div>
     </div>
   )
 }

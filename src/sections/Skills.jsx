@@ -3,6 +3,7 @@ import DescriptionEditor from './DescriptionEditor.jsx'
 import { parseLevel, formatLevel, effectiveDescription, validateName, newSkill, changeLevel } from '../skillLogic.js'
 import { t } from '../text.js'
 import { useConfirm } from './ConfirmDialog.jsx'
+import './skills.css'
 
 function SkillRow({ skill, skills, onChange, onDelete }) {
   const [name, setName] = useState(skill.name)
@@ -32,17 +33,17 @@ function SkillRow({ skill, skills, onChange, onDelete }) {
   }
 
   return (
-    <li>
+    <li className="skill-row">
       <input value={name} onChange={(e) => setName(e.target.value)} />
       <button onClick={saveName}>{t('common.rename')}</button>
-      {' '}{t('skills.level')}{' '}<input size="5" value={level} onChange={(e) => setLevel(e.target.value)} />
+      {' '}{t('skills.level')}{' '}<input size="5" inputMode="decimal" value={level} onChange={(e) => setLevel(e.target.value)} />
       <button onClick={saveLevel}>{t('skills.changeLevel')}</button>
       <button onClick={remove}>{t('common.delete')}</button>
       <div>{t('skills.currentLevel', { level: formatLevel(skill.level) })}</div>
       <div>{t('skills.descriptionLine', { text: effectiveDescription(skill) })}</div>
       <button onClick={() => setEditing(!editing)}>{editing ? t('skills.closeDescription') : t('skills.editDescription')}</button>
       {editing && <DescriptionEditor skill={skill} onChange={onChange} />}
-      {error && <div style={{ color: 'red' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--color-error)' }}>{error}</div>}
     </li>
   )
 }
@@ -66,7 +67,7 @@ export default function Skills({ data, update }) {
       <form onSubmit={add}>
         <input placeholder={t('skills.namePlaceholder')} value={name} onChange={(e) => setName(e.target.value)} />
         <button>{t('common.add')}</button>
-        {error && <span style={{ color: 'red' }}> {error}</span>}
+        {error && <span style={{ color: 'var(--color-error)' }}> {error}</span>}
       </form>
       <ul>
         {data.skills.map((s) => (

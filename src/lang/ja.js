@@ -91,7 +91,6 @@ export default {
   'common.edit': '編集',
   'common.delete': '削除',
   'common.rename': '名前を変更',
-  'common.cancel': 'キャンセル',
   'common.enable': '使う',
   'common.disable': '使わない',
   'common.inactive': '（使わない設定）', // 科目・定期支払いの名前の後ろ。前の空白は画面側
@@ -117,6 +116,20 @@ export default {
   'entries.kind.adjustment': '残高調整',
   'entries.kindNote': '（{kind}）',
   'entries.deleteConfirm': 'この仕訳を削除します。元に戻せません。先に書き出しておくことをおすすめします。',
+  'entries.dayHead': '{md}（{wd}）　{count}件',
+  'entries.pairSeparator': '／', // 一覧のカードの 借方科目／貸方科目 の区切り
+  'entries.dayLabel': '{md}（{wd}）',
+  'entries.sheetTitle': '仕訳の編集',
+  'entries.sheetNth': '{date}の{n}件目',
+  'entries.sheetClose': 'やめる',
+  'entries.discardConfirm': '変更を捨てますか？',
+  'common.weekday0': '日', 'common.weekday1': '月', 'common.weekday2': '火', 'common.weekday3': '水', 'common.weekday4': '木', 'common.weekday5': '金', 'common.weekday6': '土',
+  'entries.openModePhone': '日付の開き方（スマホの幅）',
+  'entries.openModePc': '日付の開き方（PC の幅）',
+  'entries.openMode.latest': '一番新しい日だけ開く',
+  'entries.openMode.all': '全部開く',
+  'entries.openMode.none': '全部閉じる',
+  'settings.entriesHeading': '仕訳',
 
   // 定期支払い（Subscriptions）
   'subscriptions.title': '定期支払い',
@@ -146,6 +159,7 @@ export default {
   'adjustment.title': '残高調整',
   'adjustment.note': '科目の「実際の残高」を入力すると、記録上の残高との差額が、調整益・調整損として記録されます（日付は今日）。',
   'adjustment.optionLabel': '{name}（記録上 {balance}）',
+  'adjustment.current': '記録上の残高 {balance}', // スマホ：科目を選んだあと、選択ボックスの下に出す
   'adjustment.actual': '実際の残高',
   'adjustment.submit': '調整する',
   'adjustment.same': '{name}は、記録上の残高と同じです（差額が0のため、記録しません）',
@@ -163,6 +177,7 @@ export default {
   'balance.freeClose': '）',
   'balance.unbalanced': '借方の合計と貸方の合計が合いません。存在しない科目を指す仕訳がないか、確認してください。',
   'balance.title': '残高',
+  'balance.rowSub': '借方 {debit}　貸方 {credit}', // スマホの2行目
   'balance.debitTotal': '借方合計',
   'balance.creditTotal': '貸方合計',
   'balance.note': '残高：資産は「借方合計 − 貸方合計」、負債は「貸方合計 − 借方合計」です。',
@@ -179,6 +194,8 @@ export default {
   'savings.noAccounts': '取り分けの科目がありません',
   'savings.noRecords': 'まだ記録がありません',
   'savings.cumulative': '累計',
+  'savings.in': '取り分け', // スマホの貯蓄の1行目：金額の前（借方に入った仕訳）
+  'savings.out': '取り崩し', // 同じく、貸方に入った仕訳
   'savings.note': '借方に入った仕訳は「取り分けた（＋）」、貸方に入った仕訳は「取り崩した（−）」です。',
 
   // 月次（Monthly）
@@ -188,6 +205,10 @@ export default {
   'monthly.printView': '印刷用表示',
   'monthly.print': '印刷する',
   'monthly.back': '戻る',
+  'living.option': '{month}月の生活費',
+  'living.same': '受け取った月の生活費',
+  'living.next': '翌月の生活費',
+  'living.month': '生活費の月',
   'monthly.issued': '{year}年{month}月{day}日 発行',
   'monthly.printNote': '印刷の送信先を「PDFに保存」にすると、PDFにできます。',
   'monthly.summaryTitle': '月の集計（{month}）',
@@ -196,6 +217,13 @@ export default {
   'monthly.expenseTotal': '費用合計',
   'monthly.adjustmentLine': '残高調整（調整益 − 調整損）',
   'monthly.noteSummary': '開始残高は、収入にも支出にも数えません。残高調整は、通常の収支とは別の行です。',
+  'monthly.livingTitle': '生活費のやりくり',
+  'monthly.livingNote': '（その月の暮らしに使う収入 − その月の支出）',
+  'monthly.livingIncomeTotal': '収入合計',
+  'monthly.livingExpenseTotal': '支出合計',
+  'monthly.livingNone': 'この月の生活費になる収入はありません',
+  'living.prevPaid': '先月入金',
+  'living.thisPaid': '今月入金',
   'monthly.plTitle': 'P/L（{month}）',
   'monthly.bsTitle': 'B/S（{month} 末時点）',
   'monthly.unit': '（単位：{unit}）',
@@ -251,7 +279,11 @@ export default {
   'budgets.over': '超過',
   'budgets.achieved': '達成',
   'budgets.notAchieved': '未達',
+  'budgets.rowSubLimit': '実績 {actual}／予算 {budget}　残り {remaining}　達成率 {rate}%', // スマホの2行目（上限）
+  'budgets.rowSubGoal': '実績 {actual}／目標 {budget}　不足 {shortfall}　達成率 {rate}%', // スマホの2行目（目標）
   'budgets.addTitle': '予算を追加',
+  'budgets.tabMonth': '月の予算',
+  'budgets.tabManage': '登録・履歴',
   'budgets.kind': '種類',
   'budgets.startMonth': '適用開始月',
   'budgets.note': 'ある月の予算は、その科目の予算のうち、適用開始月がその月以前で、一番新しいものです。適用開始月を変えたいときは、削除して入れ直してください。',
@@ -274,11 +306,37 @@ export default {
   'ledger.noteLocked': '計算に使う科目のため、削除・使わない設定・区分の変更はできません（名前は変えられます）',
   'ledger.noteInUse': '仕訳・定期支払い・予算で使っているため、削除と区分の変更はできません。使わないにして隠せます',
   'ledger.noteCard': 'クレカは、区分を変えられません。締め日・引き落とし日は、設定 → クレカで変えられます',
-  'ledger.noteBudget': '予算があるため、role の変更もできません。予算を全部削除すると、できるようになります',
+  'ledger.noteBudget': '予算があるため、役割の変更もできません。予算を全部削除すると、できるようになります',
 
   // 設定（Settings、CardSettings、DataSettings）
   'language.title': '言語',
-  'balanceView.title': '残高の表示',
+  'balanceView.title': '自由に使える額の初めの表示',
+
+  // 設定 → 表示（見た目。spec-design.md 3章）。名前は、どちらの言語でも言語ごとの訳
+  'theme.title': '表示',
+  'theme.preset': '見た目',
+  'theme.basic': '基本',
+  'theme.gunjo': '群青',
+  'theme.shinbu': '最深部',
+  'theme.seizu': '星図',
+  'theme.prism': 'プリズム',
+  'theme.merchant': '商人',
+  'theme.kousou': '光条',
+  'theme.accent': 'メインカラー',
+  'theme.accentSample': '見本',
+  'theme.accentPick': '色を選ぶ',
+  'theme.accentReset': '標準の色に戻す',
+  'theme.accentLighter': '読みやすいように、色を少し明るくしました',
+  'theme.accentDarker': '読みやすいように、色を少し暗くしました',
+  'theme.accent.pink': 'ピンク',
+  'theme.accent.purple': '紫',
+  'theme.accent.blue': '青',
+  'theme.accent.red': '赤',
+  'theme.accent.jade': '翠',
+  'theme.menuOpacity': 'メニューの不透明度',
+  'theme.percent': '{value}％',
+  'theme.reset': '標準に戻す（{value}％）',
+  'theme.menuOpacityNote': '低くすると、メニューの文字が読みにくくなることがあります',
   'language.ja': '日本語', // 言語の名前は、どちらの言語でも自分の言語の字で出す
   'language.ko': '한국어',
   'language.renameConfirm': '言語を変えます。初期科目の名前を、新しい言語の名前に置き換えられます。置き換える科目にチェックを入れてください（チェックを外した科目は、今の名前のままです）。',
@@ -306,10 +364,12 @@ export default {
   'settings.times': '{count}回',
   'settings.registered': '★登録済み',
   'settings.frequentNote': '今月・前月・前々月の通常の仕訳（開始残高・残高調整は数えません）から、使われた回数の多い順に5件です。',
+  'settings.group.general': '一般',
   'settings.dataHeading': 'データ',
   'cardSettings.closingAria': '{name}の締め日',
   'cardSettings.payAria': '{name}の引き落とし日',
   'cardSettings.note': 'カードごとの締め日と引き落とし日（1〜31）です。その月にない日は、月末日として扱います。変えると、過去の請求期間の区切りも計算し直されます（仕訳は変わりません）。',
+  'dataSettings.backupTitle': '書き出し・読み込み',
   'dataSettings.purgeTitle': '仕訳の一括削除',
   'dataSettings.purgeNote': '月を選ぶとその月の、「全期間」を選ぶと全部の仕訳を、種類を問わず（開始残高・残高調整も）消します。',
   'dataSettings.monthAria': '削除する月',
@@ -348,6 +408,12 @@ export default {
   'app.exportDo': '書き出す',
   'app.migrate': '移行する',
   'app.notFound': '画面が見つかりません',
+  'app.newerData': '新しい版のデータです。更新してください。', // 保存されているデータの版（schemaVersion）が、このアプリより新しいとき（spec-pwa.md 6章）
+  // PWA（spec-pwa.md 5章）：新しい版のお知らせ、今の版
+  'pwa.updateAvailable': '新しい版があります',
+  'pwa.update': '更新する',
+  'pwa.version': '版：{version}', // 設定 → 一般 の一番下。version はビルドした日時（なければ版の印）
+  'pwa.versionUnknown': '不明',
 
   // 区分・role・予算の種類の名前（ledgerLogic の TYPE_LABELS、ROLE_LABELS、BUDGET_RULES）
   // 初期科目の名前（仕様 6.5）。ledgerLogic.js の初期科目の表が使う

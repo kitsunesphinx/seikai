@@ -4,21 +4,25 @@ import { NAV } from './nav.js'
 import { t, getLanguage, setLanguage } from './text.js'
 import { parseHash, toHash } from './route.js'
 import { cardAccounts } from './ledgerLogic.js'
+import { DEFAULT_TAB } from './settingsSections.js'
 import Home from './sections/Home.jsx'
 import SideTabs from './sections/SideTabs.jsx'
 import { ConfirmContext, ConfirmDialog } from './sections/ConfirmDialog.jsx'
 import SaveLoadPanel from './sections/SaveLoadPanel.jsx'
 import './nav.css'
-import { loadData, saveData, exportJson, parseImport, needsMigration, migrate, autoRecord } from './storage.js'
+import { loadData, saveData, exportJson, parseImport, needsMigration, isNewerData, migrate, autoRecord } from './storage.js'
+import { checkForNewBuild } from './pwa.js'
 import { today, nowLocal } from './today.js'
 import { buildConfig, parseConfig, buildSaveFile, autosaveBlocker, storeErrorText } from './saveLogic.js'
 import { folderStatus, readConfig, writeConfig, writeSlot, getAutosaveHint, setAutosaveHint } from './saveStore.js'
 
 // アプリを開いたとき：データを読み、移行が要らなければ、定期支払いの自動記入を行って保存する。
+// このアプリより新しい版のデータ（isNewerData）は、記入も保存もしない（spec-pwa.md 6章）。
 // 最後に記入した月（lastMonth）が保存されるので、何回走っても（StrictMode の2回呼びでも）二重にならない。
 function startup() {
   const data = loadData()
   if (needsMigration(data)) return data // 移行のあと（doMigrate）で記入する
+  if (isNewerData(data)) return data // 新しい版のデータ：何も書かない
   const r = autoRecord(data, today())
   if (r.added) saveData(r.data)
   return r.data
@@ -31,6 +35,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('') // 読み込みで、その項目だけ無視したときの警告（エラーではない）
   const [generation, setGeneration] = useState(0) // 読み込みのたびに増やし、画面の入力状態を作り直す
+  const [settingsTab, setSettingsTab] = useState(DEFAULT_TAB) // 設定の画面で開いているタブ（spec-ui.md 4.1）。覚えない（再読み込みで記帳に戻る）。画面の作り直し（言語の変更・読み込みなど）では変わらない。URL（#）にも入れない
 
   // 言語。変えたら、一番外側の key に言語を入れて、全体を描き直す（前の言語の文字が、計算の結果を覚えている部品に残らないように。入力途中の内容は消える）。
   // setLanguage が、覚える（localStorage の別のキー）のと、html の lang・タブの題を合わせるのも行う。保存データには入れない
@@ -111,7 +116,7 @@ export default function App() {
       if (d === written.current) return setProblem(null) // 書くものがない（もう書いてある）
       try {
         const st = await folderStatus() // 許可は求めない
-        const why = autosaveBlocker({ on: onRef.current, migrating: needsMigration(d), folderState: st.state })
+        const why = autosaveBlocker({ on: onRef.current, migrating: needsMigration(d) || isNewerData(d), folderState: st.state }) // 新しい版のデータも、移行中と同じく書かない
         if (why === 'permission') return setProblem(storeErrorText('NotAllowedError'))
         if (why) return setProblem(null) // OFF・移行中・フォルダなし・未対応は、書かないだけ（出さない）
         await writeSlot('autosave.json', JSON.stringify(buildSaveFile(d, { kind: 'auto', savedAt: nowLocal(), memo: '' }), null, 2))
@@ -153,10 +158,14 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [answer])
 
-  // データの移行画面が出ているときは、# に関係なく移行画面を出す（古い形のデータなので、# も読まない）
+  // データの移行画面が出ているときは、# に関係なく移行画面を出す（古い形のデータなので、# も読まない）。新しい版のデータのときも同じく、# を読まない
   const migrating = needsMigration(data)
-  const route = migrating ? null : parseHash(hash, cardAccounts(data.accounts).map((a) => a.id))
+  const newer = isNewerData(data)
+  const route = migrating || newer ? null : parseHash(hash, cardAccounts(data.accounts).map((a) => a.id))
   const canonical = route ? toHash(route) : null
+  // 設定以外の画面へ移ったら、設定のタブは初めの（記帳）に戻す。ほかの画面から設定へのリンク（セーブ画面の「設定へ」）は、移る前に setSettingsTab で開くタブを決める
+  const onSettingsScreen = route?.tab === 'settings'
+  useEffect(() => { if (!onSettingsScreen) setSettingsTab(DEFAULT_TAB) }, [onSettingsScreen])
 
   // 知らない # や、存在しないカードの id は、画面を戻すだけでなく、アドレスも正しい形に書き換える（履歴は増やさない）
   useEffect(() => {
@@ -165,6 +174,19 @@ export default function App() {
       setHash(canonical)
     }
   }, [canonical, hash])
+
+  // 新しい版のお知らせ（spec-pwa.md 5章）：開いたとき・画面に戻ったとき・30分ごとに、公開されている版を確かめる。自動では読み直さない（入力の途中の内容が消えるため）。
+  // 出しても、確認画面・セーブ画面・ロード画面・仕訳の編集画面は閉じない（ここではデータも画面も変えない）
+  const [newBuild, setNewBuild] = useState(false)
+  useEffect(() => {
+    let alive = true
+    const look = () => { if (document.visibilityState === 'visible') checkForNewBuild().then((yes) => { if (alive && yes) setNewBuild(true) }) }
+    look()
+    const timer = setInterval(look, 30 * 60 * 1000)
+    document.addEventListener('visibilitychange', look)
+    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', look) }
+  }, [])
+  const reloadApp = () => window.location.reload() // 新しい版で読み直す（データの localStorage はそのまま）
 
   const doExport = () => {
     const a = document.createElement('a')
@@ -226,25 +248,44 @@ export default function App() {
   const entry = route && NAV.find((e) => e.id === route.entry)
   const Screen = route && route.tab ? screens[route.tab] : null
 
+  // 「オートセーブできません」（書けないときだけ）。出し場所は、PC は右上の帯、スマホはメニューのある画面では上の帯の右端、ホーム・移行画面では中身の一番上（spec-mobile.md 第4章）
+  const notice = problem !== null && <button type="button" className="autosave-problem" title={problem} onClick={retryAutosave}>{t('save.autosaveFailed')}</button>
+  // 新しい版のお知らせ。PC は右上の帯、スマホは中身の一番上（上の帯のすぐ下。重ねずに流れの中に置くので、入力の欄を隠さない）
+  const updateNotice = newBuild && !newer && (
+    <div className="update-notice" role="status">
+      <span>{t('pwa.updateAvailable')}</span>
+      <button type="button" onClick={reloadApp}>{t('pwa.update')}</button>
+    </div>
+  )
+
   return (
     <ConfirmContext.Provider value={confirm}>
     <div className="frame" key={language}>
-      {entry &&<SideTabs entry={entry} currentTab={route.tab} onOpenPanel={openPanel} />}
+      {entry &&<SideTabs entry={entry} currentTab={route.tab} onOpenPanel={openPanel} notice={notice} />}
       <div className="main-col">
-        <header>
+        {/* 右上の書き出し・読み込みの帯。スマホの形では出さない（同じ機能は 設定 → データ。index.css） */}
+        {!newer && <header>
           <div>
-            {problem !== null && <button type="button" className="autosave-problem" title={problem} onClick={retryAutosave}>{t('save.autosaveFailed')}</button>}
+            {updateNotice}
+            {notice}
             <button onClick={doExport}>{t('app.export')}</button>
             <label>
               <input type="file" accept=".json" onChange={doImport} hidden />
-              <span role="button" style={{ border: '1px solid #767676', borderRadius: 3, padding: '1px 6px', cursor: 'pointer' }}>{t('app.import')}</span>
+              <span role="button" style={{ border: '1px solid var(--color-muted)', borderRadius: 3, padding: '1px 6px', cursor: 'pointer' }}>{t('app.import')}</span>
             </label>
           </div>
-        </header>
+        </header>}
         <div className="content">
-          {error && <p style={{ color: 'red' }}>{error}</p>}
+          {updateNotice && <div className="phone-only">{updateNotice}</div>}
+          {!entry && notice && <div className="phone-only">{notice}</div>}
+          {error &&<p style={{ color: 'var(--color-error)' }}>{error}</p>}
           {warning && <p className="warning">{warning}</p>}
-          {migrating ? (
+          {newer ? (
+            <div className="newer-data">
+              <p>{t('app.newerData')}</p>
+              <button type="button" onClick={reloadApp}>{t('pwa.update')}</button>
+            </div>
+          ) : migrating ? (
             <div className="migration">
               <p>{t('app.migrationNote')}</p>
               <button onClick={doExport}>{t('app.exportDo')}</button>
@@ -256,12 +297,12 @@ export default function App() {
             </main>
           ) : (
             <main key={generation}>
-              {Screen ? <Screen data={data} update={update} detailId={route.detailId} openPanel={openPanel} replaceData={replaceData} autosave={autosave} autosaveBeforeReplace={autosaveBeforeReplace} language={language} onChangeLanguage={changeLanguage} /> : <p className="error">{t('app.notFound')}</p>}
+              {Screen ? <Screen data={data} update={update} detailId={route.detailId} openPanel={openPanel} replaceData={replaceData} autosave={autosave} autosaveBeforeReplace={autosaveBeforeReplace} language={language} onChangeLanguage={changeLanguage} onExport={doExport} onImport={doImport} tab={settingsTab} onTab={setSettingsTab} /> : <p className="error">{t('app.notFound')}</p>}
             </main>
           )}
         </div>
       </div>
-      {panel && <SaveLoadPanel key={panel} mode={panel} data={data} onClose={() => setPanel(null)} onLoad={async (r) => { await applyImported(r); setPanel(null) }} />}
+      {panel && <SaveLoadPanel key={panel} mode={panel} data={data} onClose={() => setPanel(null)} onToSettings={setSettingsTab} onLoad={async (r) => { await applyImported(r); setPanel(null) }} />}
       {request && <ConfirmDialog key={request.id} request={request} onAnswer={answer} />}
     </div>
     </ConfirmContext.Provider>

@@ -8,23 +8,53 @@ import {
 import { today } from '../today.js'
 import { t } from '../text.js'
 import { useConfirm } from './ConfirmDialog.jsx'
+import { usePhone } from '../layout.js'
+import Tabs from './Tabs.jsx'
+import { tabDomId, panelDomId } from '../tabs.js'
 
 const Yen = ({ n, currency }) => <>{formatMoney(n, currency)}</>
 const Rate = ({ n }) => <>{n}%</>
 
+// スマホの幅（spec-mobile.md 第6章）：1科目を2行。1行目に科目と判定（文字。超過の行はエラーの色。未達・達成は赤くしない）、
+// 2行目に「実績／予算」と残り（目標は不足）と達成率。合計の行も同じ形（判定なし）。PC は下の表のまま
+function BudgetRows({ rows, total, currency, kind }) {
+  const y = (n) => formatMoney(n, currency)
+  const sub = (r) => (kind === 'limit'
+    ? t('budgets.rowSubLimit', { actual: y(r.actual), budget: y(r.budget), remaining: y(r.remaining), rate: r.rate })
+    : t('budgets.rowSubGoal', { actual: y(r.actual), budget: y(r.budget), shortfall: y(r.shortfall), rate: r.rate }))
+  const judge = (r) => (kind === 'limit' ? (r.over ? t('budgets.over') : '') : r.status === 'achieved' ? t('budgets.achieved') : t('budgets.notAchieved'))
+  return (
+    <ul className="rows2">
+      {rows.map((r) => (
+        <li key={r.account.id} className={r.over ? 'over' : ''}>
+          {r.account.active ? <span className="name">{r.account.name}</span> : <span className="name with-note"><span className="nm">{r.account.name}</span><span className="note"> {t('common.inactive')}</span></span>}
+          <span className="value">{judge(r)}</span>
+          <span className="sub">{sub(r)}</span>
+        </li>
+      ))}
+      <li className="total">
+        <span className="name">{t('common.total')}</span>
+        <span className="value" />
+        <span className="sub">{sub(total)}</span>
+      </li>
+    </ul>
+  )
+}
+
 // 上限の表（費用）：予算、実績、残り、達成率、判定（超過の行は赤）。最後に合計の行（判定なし）
-function LimitTable({ limits, currency }) {
+function LimitTable({ limits, currency, phone }) {
   if (limits.rows.length === 0) return <p className="note">{t('budgets.noLimits')}</p>
   const { total } = limits
+  if (phone) return <BudgetRows rows={limits.rows} total={total} currency={currency} kind="limit" />
   return (
-    <table className="budget-table">
+    <div className="table-box"><table className="budget-table">
       <thead>
         <tr><th>{t('common.account')}</th><th>{t('budgets.budget')}</th><th>{t('budgets.actual')}</th><th>{t('budgets.remaining')}</th><th>{t('budgets.rate')}</th><th>{t('budgets.judgement')}</th></tr>
       </thead>
       <tbody>
         {limits.rows.map((r) => (
           <tr key={r.account.id} className={r.over ? 'over' : ''}>
-            <td>{r.account.name}{!r.account.active && <span className="note"> {t('common.inactive')}</span>}</td>
+            <td className="wrap">{r.account.name}{!r.account.active && <span className="note"> {t('common.inactive')}</span>}</td>
             <td><Yen n={r.budget} currency={currency} /></td>
             <td><Yen n={r.actual} currency={currency} /></td>
             <td><Yen n={r.remaining} currency={currency} /></td>
@@ -36,23 +66,24 @@ function LimitTable({ limits, currency }) {
           <td>{t('common.total')}</td><td><Yen n={total.budget} currency={currency} /></td><td><Yen n={total.actual} currency={currency} /></td><td><Yen n={total.remaining} currency={currency} /></td><td><Rate n={total.rate} /></td><td />
         </tr>
       </tbody>
-    </table>
+    </table></div>
   )
 }
 
 // 目標の表（取り分け）：目標、実績、不足、達成率、判定（達成・未達。目標を超えても赤くしない）。最後に合計の行（判定なし）
-function GoalTable({ goals, currency }) {
+function GoalTable({ goals, currency, phone }) {
   if (goals.rows.length === 0) return <p className="note">{t('budgets.noGoals')}</p>
   const { total } = goals
+  if (phone) return <BudgetRows rows={goals.rows} total={total} currency={currency} kind="goal" />
   return (
-    <table className="budget-table">
+    <div className="table-box"><table className="budget-table">
       <thead>
         <tr><th>{t('common.account')}</th><th>{t('budgets.goal')}</th><th>{t('budgets.actual')}</th><th>{t('budgets.shortfall')}</th><th>{t('budgets.rate')}</th><th>{t('budgets.judgement')}</th></tr>
       </thead>
       <tbody>
         {goals.rows.map((r) => (
           <tr key={r.account.id}>
-            <td>{r.account.name}{!r.account.active && <span className="note"> {t('common.inactive')}</span>}</td>
+            <td className="wrap">{r.account.name}{!r.account.active && <span className="note"> {t('common.inactive')}</span>}</td>
             <td><Yen n={r.budget} currency={currency} /></td>
             <td><Yen n={r.actual} currency={currency} /></td>
             <td><Yen n={r.shortfall} currency={currency} /></td>
@@ -64,7 +95,7 @@ function GoalTable({ goals, currency }) {
           <td>{t('common.total')}</td><td><Yen n={total.budget} currency={currency} /></td><td><Yen n={total.actual} currency={currency} /></td><td><Yen n={total.shortfall} currency={currency} /></td><td><Rate n={total.rate} /></td><td />
         </tr>
       </tbody>
-    </table>
+    </table></div>
   )
 }
 
@@ -113,6 +144,8 @@ export default function Budgets({ data, update }) {
   const [error, setError] = useState('')
 
   const confirm = useConfirm()
+  const phone = usePhone()
+  const [tab, setTab] = useState('month') // 開いているタブ（月の予算・登録・履歴）。初めは月の予算。覚えない（画面を移ると戻る）。追加・変更・削除のあとも変えない
 
   const add = async (e) => {
     e.preventDefault()
@@ -126,37 +159,9 @@ export default function Budgets({ data, update }) {
 
   const budgeted = accounts.filter((a) => hasBudget(a, budgets))
 
-  return (
-    <div className="report budgets">
-      <h2>{t('budgets.title')}</h2>
-      <div className="month-bar">
-        <input type="month" aria-label={t('common.month')} value={month} onChange={(e) => setMonth(e.target.value)} />
-        <button type="button" onClick={() => setMonth(today().slice(0, 7))}>{t('common.thisMonth')}</button>
-        <button type="button" onClick={() => setMonth(previousMonth(today()))}>{t('common.lastMonth')}</button>
-      </div>
-      {!month ? <p className="note">{t('common.chooseMonth')}</p> : (
-        <>
-          <h3>{t('budgets.limitTitle')}</h3>
-          <LimitTable limits={status.limits} currency={currency} />
-          {status.unset.length > 0 && (
-            <>
-              <h3>{t('budgets.unsetTitle')}</h3>
-              <table className="budget-table">
-                <thead>
-                  <tr><th>{t('common.account')}</th><th>{t('budgets.actual')}</th></tr>
-                </thead>
-                <tbody>
-                  {status.unset.map((r) => <tr key={r.account.id}><td>{r.account.name}</td><td><Yen n={r.actual} currency={currency} /></td></tr>)}
-                </tbody>
-              </table>
-            </>
-          )}
-          <h3>{t('budgets.goalTitle')}</h3>
-          <GoalTable goals={status.goals} currency={currency} />
-        </>
-      )}
-
-      <h3>{t('budgets.addTitle')}</h3>
+  // 予算を追加する欄（「登録・履歴」のタブ。開閉せず、開いた形。PC もスマホも同じ）
+  const addForm = (
+    <>
       <form onSubmit={add}>
         <select aria-label={t('budgets.kind')} value={kind} onChange={(e) => { setKind(e.target.value); setAccountId('') }}>
           {Object.entries(BUDGET_RULES).map(([k, rule]) => <option key={k} value={k}>{rule.label}</option>)}
@@ -171,24 +176,80 @@ export default function Budgets({ data, update }) {
         {error && <span className="error">{error}</span>}
       </form>
       <p className="note">{t('budgets.note')}</p>
+    </>
+  )
 
-      <h3>{t('budgets.historyTitle')}</h3>
-      {budgeted.length === 0 ? <p className="note">{t('budgets.empty')}</p> : budgeted.map((account) => {
-        const history = budgetHistory(budgets, account.id)
-        const now = effectiveBudget(budgets, account.id, today().slice(0, 7))
-        return (
-          <details key={account.id} className={account.active ? '' : 'inactive'}>
-            <summary>
-              {account.name}{t('budgets.kindWrap', { kind: BUDGET_RULES[history[0].kind]?.label })}
-              {!account.active && <span className="note"> {t('common.inactive')}</span>}
-              <span className="note"> {now ? t('budgets.thisMonthNow', { amount: formatMoney(now.amount, currency) }) : t('budgets.noBudgetThisMonth')}</span>
-            </summary>
-            <ul>
-              {history.map((b) => <HistoryRow key={`${b.id}:${b.amount}`} budget={b} data={data} update={update} />)}
-            </ul>
-          </details>
-        )
-      })}
+  return (
+    <div className="report budgets">
+      <h2>{t('budgets.title')}</h2>
+      <Tabs label={t('budgets.title')} tabs={[{ id: 'month', title: t('budgets.tabMonth') }, { id: 'manage', title: t('budgets.tabManage') }]} current={tab} onChange={setTab} prefix="budgets" />
+      <div role="tabpanel" id={panelDomId('budgets', tab)} aria-labelledby={tabDomId('budgets', tab)} className={tab === 'manage' ? 'tab-panel panel-manage' : 'tab-panel'}>
+        {tab === 'month' ? (
+          <>
+            <div className="month-bar">
+              <input type="month" aria-label={t('common.month')} value={month} onChange={(e) => setMonth(e.target.value)} />
+              <button type="button" onClick={() => setMonth(today().slice(0, 7))}>{t('common.thisMonth')}</button>
+              <button type="button" onClick={() => setMonth(previousMonth(today()))}>{t('common.lastMonth')}</button>
+            </div>
+            {!month ? <p className="note">{t('common.chooseMonth')}</p> : (
+              <>
+                <h3>{t('budgets.limitTitle')}</h3>
+                <LimitTable limits={status.limits} currency={currency} phone={phone} />
+                {status.unset.length > 0 && (
+                  <>
+                    <h3>{t('budgets.unsetTitle')}</h3>
+                    {phone ? (
+                      // スマホの幅：科目名と実績の2列は、長い科目名で表が広がるので、1行の形（名前は幅で「…」）にする
+                      <ul className="rows2">
+                        {status.unset.map((r) => (
+                          <li key={r.account.id}>
+                            <span className="name">{r.account.name}</span>
+                            <span className="value"><Yen n={r.actual} currency={currency} /></span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="table-box"><table className="budget-table">
+                        <thead>
+                          <tr><th>{t('common.account')}</th><th>{t('budgets.actual')}</th></tr>
+                        </thead>
+                        <tbody>
+                          {status.unset.map((r) => <tr key={r.account.id}><td className="wrap">{r.account.name}</td><td><Yen n={r.actual} currency={currency} /></td></tr>)}
+                        </tbody>
+                      </table></div>
+                    )}
+                  </>
+                )}
+                <h3>{t('budgets.goalTitle')}</h3>
+                <GoalTable goals={status.goals} currency={currency} phone={phone} />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <h3>{t('budgets.addTitle')}</h3>
+            {addForm}
+
+            <h3>{t('budgets.historyTitle')}</h3>
+            {budgeted.length === 0 ? <p className="note">{t('budgets.empty')}</p> : budgeted.map((account) => {
+              const history = budgetHistory(budgets, account.id)
+              const now = effectiveBudget(budgets, account.id, today().slice(0, 7))
+              return (
+                <details key={account.id} className={account.active ? '' : 'inactive'}>
+                  <summary>
+                    {account.name}{t('budgets.kindWrap', { kind: BUDGET_RULES[history[0].kind]?.label })}
+                    {!account.active && <span className="note"> {t('common.inactive')}</span>}
+                    <span className="note"> {now ? t('budgets.thisMonthNow', { amount: formatMoney(now.amount, currency) }) : t('budgets.noBudgetThisMonth')}</span>
+                  </summary>
+                  <ul>
+                    {history.map((b) => <HistoryRow key={`${b.id}:${b.amount}`} budget={b} data={data} update={update} />)}
+                  </ul>
+                </details>
+              )
+            })}
+          </>
+        )}
+      </div>
     </div>
   )
 }

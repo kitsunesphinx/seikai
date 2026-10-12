@@ -1,37 +1,38 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { planEntryPurge } from '../ledgerLogic.js'
 import { emptyData } from '../storage.js'
-import { today, nowLocal } from '../today.js'
+import { today } from '../today.js'
 import { t } from '../text.js'
-import { slotView, lastSaveText } from '../saveLogic.js'
-import { folderStatus, readSlots } from '../saveStore.js'
+import { lastSaveLine } from './lastSave.js'
 import { useConfirm } from './ConfirmDialog.jsx'
+import { isSupported } from '../saveStore.js'
 
-// 設定 → データ：仕訳の一括削除（月か全期間）と、全体の初期化。どちらも、文字を打たないと実行できない確認画面を出す。
-// 確認画面に「最後のセーブ：○○前」と「先にセーブする」ボタンを出す。ボタンを押すと、確認画面を「いいえ」で閉じて、セーブ画面を開く（もう一度押し直す）。
-// 計算は planEntryPurge（ledgerLogic.js）。画面は結果を出して、update するだけ
+// 設定 → データの3つの項目（spec-ui.md 4.1。作業21 で、1つの「データ」の項目から分けた。中身と動きは今までどおり）。
+// 書き出し・読み込み（スマホの形だけ。右上の帯の代わり。spec-mobile.md 第4章）、仕訳の一括削除（月か全期間）、全体の初期化。
+// 一括削除と初期化は、文字を打たないと実行できない確認画面を出す。確認画面に「最後のセーブ：○○前」と「先にセーブする」ボタンを出す。
+// ボタンを押すと、確認画面を「いいえ」で閉じて、セーブ画面を開く（もう一度押し直す）。計算は planEntryPurge（ledgerLogic.js）。画面は結果を出して、update するだけ
 
-// 確認画面に出す「最後のセーブ：…」の行。許可は求めない（確かめるだけ）。ブラウザが対応していなければ null（行を出さない）
-async function lastSaveLine() {
-  try {
-    const st = await folderStatus()
-    if (st.state === 'unsupported') return null
-    if (st.state === 'none') return t('save.lastSaveLine', { value: t('save.noFolder') })
-    if (st.state !== 'granted') return t('save.lastSaveLine', { value: t('save.unknownLastSave') })
-    const savedAts = (await readSlots()).filter((r) => r.text !== null).map((r) => slotView(r.text).savedAt).filter(Boolean)
-    return t('save.lastSaveLine', { value: lastSaveText(savedAts, nowLocal()) })
-  } catch {
-    return t('save.lastSaveLine', { value: t('save.unknownLastSave') })
-  }
+// フォルダの読み書きができないブラウザ（スマホなど）では、押しても行き止まりなので出さない（spec-save.md 11章・12章の例外）
+const saveFirstButton = (openPanel) => (!isSupported() ? null : <button type="button" onClick={() => openPanel('save')}>{t('save.saveFirst')}</button>)
+
+// 書き出し・読み込み。処理は App の doExport・doImport のまま
+export function BackupSettings({ onExport, onImport }) {
+  const fileRef = useRef(null)
+  return (
+    <section className="backup-row">
+      <button type="button" onClick={onExport}>{t('app.export')}</button>{' '}
+      <button type="button" onClick={() => fileRef.current?.click()}>{t('app.import')}</button>
+      <input ref={fileRef} type="file" accept=".json" onChange={onImport} hidden />
+    </section>
+  )
 }
 
-export default function DataSettings({ data, update, openPanel, replaceData, autosaveBeforeReplace }) {
+export function PurgeSettings({ data, update, openPanel, autosaveBeforeReplace }) {
   const confirm = useConfirm()
   const [month, setMonth] = useState(() => today().slice(0, 7))
   const [all, setAll] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const saveButton = <button type="button" onClick={() => openPanel('save')}>{t('save.saveFirst')}</button>
 
   const purge = async () => {
     setMessage('')
@@ -50,7 +51,7 @@ export default function DataSettings({ data, update, openPanel, replaceData, aut
         ...(last ? [last] : []),
       ].join('\n'),
       requireText: t('dataSettings.purgeRequire'),
-      extra: saveButton,
+      extra: saveFirstButton(openPanel),
     })
     if (!ok) return
     await autosaveBeforeReplace() // 消す前の状態を、オートセーブへ書く（書けるときだけ。書けなくても進む）
@@ -58,26 +59,8 @@ export default function DataSettings({ data, update, openPanel, replaceData, aut
     setMessage(t('dataSettings.purged', { total }))
   }
 
-  const reset = async () => {
-    setMessage('')
-    setError('')
-    const last = await lastSaveLine()
-    const ok = await confirm({
-      message: [
-        t('dataSettings.resetConfirmHead'),
-        t('dataSettings.resetConfirmNote'),
-        ...(last ? [last] : []),
-      ].join('\n'),
-      requireText: t('dataSettings.resetRequire'),
-      extra: saveButton,
-    })
-    if (!ok) return
-    replaceData(emptyData())
-  }
-
   return (
     <section>
-      <h4>{t('dataSettings.purgeTitle')}</h4>
       <p className="note">{t('dataSettings.purgeNote')}</p>
       <div>
         <input type="month" aria-label={t('dataSettings.monthAria')} value={month} disabled={all} onChange={(e) => setMonth(e.target.value)} />{' '}
@@ -86,7 +69,29 @@ export default function DataSettings({ data, update, openPanel, replaceData, aut
         {error && <span className="error"> {error}</span>}
         {message && <span className="note"> {message}</span>}
       </div>
-      <h4>{t('dataSettings.resetTitle')}</h4>
+    </section>
+  )
+}
+
+export function ResetSettings({ openPanel, replaceData }) {
+  const confirm = useConfirm()
+  const reset = async () => {
+    const last = await lastSaveLine()
+    const ok = await confirm({
+      message: [
+        t('dataSettings.resetConfirmHead'),
+        t('dataSettings.resetConfirmNote'),
+        ...(last ? [last] : []),
+      ].join('\n'),
+      requireText: t('dataSettings.resetRequire'),
+      extra: saveFirstButton(openPanel),
+    })
+    if (!ok) return
+    replaceData(emptyData())
+  }
+
+  return (
+    <section>
       <p className="note">{t('dataSettings.resetDesc')}</p>
       <button type="button" onClick={reset}>{t('dataSettings.resetButton')}</button>
     </section>

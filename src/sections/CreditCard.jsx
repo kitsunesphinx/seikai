@@ -66,12 +66,12 @@ export default function CreditCard({ data, update, detailId = null }) {
     <div className="report">
       <h2>{t('card.title')}</h2>
       <h3>{t('card.totalTitle')}</h3>
-      <table>
+      <div className="table-box"><table>
         <tbody>
           <tr><td>{t('card.thisMonthRow', { month: thisMonth.month })}</td><td><Num n={thisMonth.amount} />{unit}</td></tr>
           <tr><td>{t('card.lastMonthRow', { month: lastMonth.month })}</td><td><Num n={lastMonth.amount} />{unit}</td></tr>
         </tbody>
-      </table>
+      </table></div>
       <p className="note">{t('card.totalNote')}</p>
       <h3>{t('card.listTitle')}</h3>
       {reports.length === 0 ? <p className="note">{t('card.empty')}</p> : (

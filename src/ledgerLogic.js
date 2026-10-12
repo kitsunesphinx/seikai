@@ -20,6 +20,10 @@ export const ROLE_LABELS = {
   get other() { return t('role.other') },
 }
 export const KINDS = ['normal', 'opening', 'adjustment']
+// 生活費の月（仕様 3.9・5.14）。same＝受け取った月の生活費、next＝翌月の生活費
+export const LIVING = ['same', 'next']
+// 生活費の月の決まり（livingMonth）を持つ科目：収益のうち、調整益を除いたもの
+export const hasLivingMonth = (account) => account?.type === 'revenue' && account.key !== 'adjust-gain'
 
 // 初期科目（仕様 6.5。どの国にもある科目だけ）。[名前の辞書のキー, type, role, preset, key, card（role が card のときだけ { closingDay, payDay }）]
 // 名前は言語ごとの辞書（accountName.*）から取る。preset は内部の印で、計算には使わない（計算は key で探す）。key を持つ4つは preset を持たない
@@ -113,6 +117,7 @@ export const newAccount = (name, type, role, now = new Date().toISOString(), key
     ...(type === 'asset' && { role }),
     ...(type === 'liability' && { role: isCardRole ? 'card' : 'other' }),
     ...(isCardRole && { closingDay: card.closingDay, payDay: card.payDay }),
+    ...(hasLivingMonth({ type, key }) && { livingMonth: 'same' }), // 新しい収益の科目は「受け取った月の生活費」
     ...(key && { key }),
     ...(preset && { preset }),
     active: true,
@@ -161,10 +166,71 @@ export function validateAccountName(name, accounts, selfId) {
   return { name: n }
 }
 
-// type を変えたら role を整える（asset は role 必須、liability は other、ほかは role なし）。締め日・引き落とし日は消える
+// type を変えたら role を整える（asset は role 必須、liability は other、ほかは role なし）。締め日・引き落とし日は消える。
+// 収益にしたら生活費の月の決まりは same、収益から変えたら消える（区分を変えられるのは仕訳のない科目だけなので、仕訳には影響しない）
 export function changeType(account, type, role, now = new Date().toISOString()) {
-  const { role: _old, closingDay: _closing, payDay: _pay, ...rest } = account
-  return { ...rest, type, ...(type === 'asset' && { role: role ?? 'other' }), ...(type === 'liability' && { role: 'other' }), updatedAt: now }
+  const { role: _old, closingDay: _closing, payDay: _pay, livingMonth: _living, ...rest } = account
+  return {
+    ...rest, type,
+    ...(type === 'asset' && { role: role ?? 'other' }), ...(type === 'liability' && { role: 'other' }),
+    ...(hasLivingMonth({ type, key: account.key }) && { livingMonth: 'same' }),
+    updatedAt: now,
+  }
+}
+
+// ---- 生活費の月（仕様 5.14） ----
+
+// 仕訳の生活費の月を決める科目：貸方を先に見る（両側が収益なら貸方の決まり）。なければ借方。どちらもなければ undefined
+export function livingAccount(accounts, debitId, creditId) {
+  const find = (id) => accounts.find((a) => a.id === id && hasLivingMonth(a))
+  return find(creditId) ?? find(debitId)
+}
+
+// 新しい仕訳の living の初期値：その科目の決まり。収益の科目を使わない仕訳は null
+export const defaultLiving = (accounts, debitId, creditId) => livingAccount(accounts, debitId, creditId)?.livingMonth ?? null
+
+// 入力欄の選択肢の文字：日付が正しければ「9月の生活費」（same は日付の月、next は翌月）。正しくなければ「受け取った月の生活費」「翌月の生活費」
+export function livingOptionLabel(date, living) {
+  if (!isDate(date)) return living === 'next' ? t('living.next') : t('living.same')
+  const month = living === 'next' ? nextMonth(date.slice(0, 7)) : date.slice(0, 7)
+  return t('living.option', { month: Number(month.slice(5, 7)) })
+}
+
+// 入力欄で借方・貸方を変えたときの living。before・after は { debitId, creditId, living }。
+// 生活費の月を決める科目が同じままなら今の選び方を残し、別の科目になったら新しい科目の決まり、収益の科目がなくなったら null
+export function livingOnAccountChange(accounts, before, after) {
+  const was = livingAccount(accounts, before.debitId, before.creditId)
+  const now = livingAccount(accounts, after.debitId, after.creditId)
+  if (!now) return null
+  return was?.id === now.id && LIVING.includes(before.living) ? before.living : now.livingMonth
+}
+
+// 生活費のやりくり（仕様 5.14）。month の生活費になる収入（kind が normal で living を持つ仕訳）と、その月の支出を比べる。
+// same は日付の月、next は翌月の生活費。収益の科目が貸方なら +、借方（取り消し）なら −（両側が収益なら差し引き0）。調整益・開始残高・残高調整は数えない
+// items：{ id, date, account, amount, living }（日付順）。expenseTotal は monthReport と同じ（開始残高・残高調整は入らない）
+export function livingBalance(entries, accounts, month) {
+  const byId = new Map(accounts.map((a) => [a.id, a]))
+  const items = []
+  for (const e of [...entries].sort(byDateThenCreated)) {
+    if (e.kind !== 'normal' || !LIVING.includes(e.living)) continue
+    const m = e.date.slice(0, 7)
+    if ((e.living === 'next' ? nextMonth(m) : m) !== month) continue
+    for (const [id, sign] of [[e.creditId, 1], [e.debitId, -1]]) {
+      const account = byId.get(id)
+      if (hasLivingMonth(account)) items.push({ id: e.id, date: e.date, account, amount: sign * e.amount, living: e.living })
+    }
+  }
+  const incomeTotal = sum(items, (i) => i.amount)
+  const expenseTotal = monthReport(accounts, entries, month).expenseTotal
+  return { items, incomeTotal, expenseTotal, result: incomeTotal - expenseTotal }
+}
+
+// v8 → v9：収益の科目（調整益を除く）に same、それを使う通常の仕訳に same を付ける。持っているものは変えない。元の配列は変えない
+export function addLiving(accounts, entries) {
+  const nextAccounts = accounts.map((a) => (hasLivingMonth(a) && a.livingMonth === undefined ? { ...a, livingMonth: 'same' } : a))
+  const nextEntries = entries.map((e) =>
+    e.kind === 'normal' && e.living === undefined && livingAccount(nextAccounts, e.debitId, e.creditId) ? { ...e, living: 'same' } : e)
+  return { accounts: nextAccounts, entries: nextEntries }
 }
 
 // ---- 仕訳の入力・一覧 ----
@@ -187,14 +253,16 @@ export function parseAmount(text) {
 export const entryAccountOptions = (accounts, currentIds = []) =>
   accounts.filter((a) => (a.active && !ENTRY_HIDDEN_KEYS.includes(a.key)) || currentIds.includes(a.id))
 
-export function validateEntryInput({ date, debitId, creditId, amountText }, accounts) {
+// living：収益の科目（調整益を除く）を使う仕訳だけが持つ。渡された値が same・next でなければ、科目の決まり（defaultLiving）
+export function validateEntryInput({ date, debitId, creditId, amountText, living }, accounts) {
   if (!isDate(date)) return { error: t('error.dateInvalid') }
   const a = parseAmount(amountText)
   if (a.error) return a
   const ids = new Set(accounts.map((x) => x.id))
   if (!ids.has(debitId) || !ids.has(creditId)) return { error: t('error.chooseDebitCredit') }
   if (debitId === creditId) return { error: t('error.sameDebitCredit') }
-  return { date, debitId, creditId, amount: a.amount }
+  const fallback = defaultLiving(accounts, debitId, creditId)
+  return { date, debitId, creditId, amount: a.amount, ...(fallback !== null && { living: LIVING.includes(living) ? living : fallback }) }
 }
 
 export const newEntry = (input, memo, now = new Date().toISOString()) => ({
@@ -205,18 +273,20 @@ export const newEntry = (input, memo, now = new Date().toISOString()) => ({
   amount: input.amount,
   memo,
   kind: 'normal',
+  ...(input.living && { living: input.living }),
   createdAt: now,
   updatedAt: now,
 })
 
-// id・kind・createdAt は保つ
-export const editEntry = (entry, input, memo, now = new Date().toISOString()) => ({
+// id・kind・createdAt は保つ。living は付け直す（収益の科目を使わなくなった仕訳からは消える）
+export const editEntry = ({ living: _living, ...entry }, input, memo, now = new Date().toISOString()) => ({
   ...entry,
   date: input.date,
   debitId: input.debitId,
   creditId: input.creditId,
   amount: input.amount,
   memo,
+  ...(input.living && { living: input.living }),
   updatedAt: now,
 })
 
@@ -698,8 +768,9 @@ export function setSubscriptionActive(sub, active, today, now = new Date().toISO
 
 // 自動記入：active の定期支払いについて、lastMonth の次の月から今月まで、指定日が今日以前の月の分を、その日付の通常の仕訳として足す。
 // 記入した月まで lastMonth を進める（保存されるので、何回呼んでも、同じ月は二重にならない。仕訳を削除しても作り直さない）。
-// 何も記入しないときは、渡した配列をそのまま返す。元の配列は変えない
-export function applySubscriptions(subscriptions, entries, today, now = new Date().toISOString()) {
+// 何も記入しないときは、渡した配列をそのまま返す。元の配列は変えない。
+// 収益の科目を使う分は、記入するときの科目の決まりで living を付ける（accounts は今の科目）
+export function applySubscriptions(subscriptions, entries, accounts, today, now = new Date().toISOString()) {
   const added = []
   const next = subscriptions.map((sub) => {
     if (!sub.active) return sub
@@ -707,7 +778,8 @@ export function applySubscriptions(subscriptions, entries, today, now = new Date
     for (let month = nextMonth(lastMonth); month <= today.slice(0, 7); month = nextMonth(month)) {
       const date = subscriptionDate(month, sub.day)
       if (date > today) break // 今月で、指定日がまだ来ていない
-      added.push({ id: crypto.randomUUID(), date, debitId: sub.debitId, creditId: sub.creditId, amount: sub.amount, memo: sub.name, kind: 'normal', createdAt: now, updatedAt: now })
+      const living = defaultLiving(accounts, sub.debitId, sub.creditId)
+      added.push({ id: crypto.randomUUID(), date, debitId: sub.debitId, creditId: sub.creditId, amount: sub.amount, memo: sub.name, kind: 'normal', ...(living && { living }), createdAt: now, updatedAt: now })
       lastMonth = month
     }
     return lastMonth === sub.lastMonth ? sub : { ...sub, lastMonth, updatedAt: now }

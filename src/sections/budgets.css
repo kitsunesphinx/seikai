@@ -8,3 +8,21 @@
 .budgets li .start { min-width: 8em; }
 .budgets li .amount { min-width: 8em; text-align: right; font-variant-numeric: tabular-nums; }
 .budgets li input { width: 8em; text-align: right; }
+
+/* ---- スマホの形（spec-mobile.md 第6章。layout.js の PHONE_QUERY・balance.css などと同じ条件。変えるときは全部） ---- */
+@media screen and (max-width: 959.98px), screen and (pointer: coarse) and (hover: none) {
+  /* 2行の形（.rows2 は balance.css）。超過の行は、PC の表と同じくエラーの色（未達・達成は赤くしない） */
+  .budgets .rows2 { margin-bottom: var(--space); }
+  .budgets .rows2 .sub { word-break: keep-all; } /* 「達成率 15%」などを、文字の途中で折り返さない（区切りは空白） */
+  .budgets .rows2 > li.over, .budgets .rows2 > li.over .sub { color: var(--color-error); }
+  /* 予算を追加する欄（「登録・履歴」のタブ。作業26 で、スマホの開閉をやめた）：選択ボックス・金額は 2 列 */
+  .budgets .panel-manage > form select, .budgets .panel-manage > form input { flex: 1 1 calc(50% - var(--space)); min-width: 0; }
+  .budgets .panel-manage > form label { display: flex; flex: 1 1 100%; align-items: center; gap: var(--space); }
+  .budgets .panel-manage > form label input { flex: 1; }
+  /* 決定のボタン「追加」は幅いっぱいの1行（11.3） */
+  .budgets .panel-manage > form > button { flex: 1 1 100%; }
+  .budgets .panel-manage > form > .error { flex: 1 1 100%; }
+}
+
+/* 「登録・履歴」のパネルの下の空き：履歴の科目を開いても、中身が画面の下の端に張り付かないようにする（spec-ledger.md 5.15）。画面の高さの 30%（最低 48px）。PC・スマホとも */
+.budgets .panel-manage { padding-bottom: max(calc(var(--space) * 6), 30vh); }
