@@ -4,17 +4,23 @@ import { NAV } from './nav.js'
 import { t, getLanguage, setLanguage } from './text.js'
 import { parseHash, toHash } from './route.js'
 import { cardAccounts } from './ledgerLogic.js'
-import { DEFAULT_TAB } from './settingsSections.js'
+import { DEFAULT_TAB, SETTINGS_GROUPS } from './settingsSections.js'
+import { getReturnTab, startLogin, modalOpen } from './driveStore.js'
+import { useDriveSync } from './useDriveSync.js'
 import Home from './sections/Home.jsx'
 import SideTabs from './sections/SideTabs.jsx'
 import { ConfirmContext, ConfirmDialog } from './sections/ConfirmDialog.jsx'
 import SaveLoadPanel from './sections/SaveLoadPanel.jsx'
+import ConflictDialog from './sections/ConflictDialog.jsx'
 import './nav.css'
 import { loadData, saveData, exportJson, parseImport, needsMigration, isNewerData, migrate, autoRecord } from './storage.js'
 import { checkForNewBuild } from './pwa.js'
 import { today, nowLocal } from './today.js'
-import { buildConfig, parseConfig, buildSaveFile, autosaveBlocker, storeErrorText } from './saveLogic.js'
-import { folderStatus, readConfig, writeConfig, writeSlot, getAutosaveHint, setAutosaveHint } from './saveStore.js'
+import { buildConfig, parseConfig, buildSaveFile, autosaveBlocker, storeErrorText, errName } from './saveLogic.js'
+import { folderStatus, readConfig, writeConfig, getAutosaveHint, setAutosaveHint } from './saveStore.js'
+import { slotStore } from './slotStore.js'
+
+const DRIVE_WAIT_LIMIT = 8000 // ドライブへの直前のオートセーブを、操作が待つ長さ（ミリ秒）。書き込みそのものは、これを過ぎても続く
 
 // アプリを開いたとき：データを読み、移行が要らなければ、定期支払いの自動記入を行って保存する。
 // このアプリより新しい版のデータ（isNewerData）は、記入も保存もしない（spec-pwa.md 6章）。
@@ -35,7 +41,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('') // 読み込みで、その項目だけ無視したときの警告（エラーではない）
   const [generation, setGeneration] = useState(0) // 読み込みのたびに増やし、画面の入力状態を作り直す
-  const [settingsTab, setSettingsTab] = useState(DEFAULT_TAB) // 設定の画面で開いているタブ（spec-ui.md 4.1）。覚えない（再読み込みで記帳に戻る）。画面の作り直し（言語の変更・読み込みなど）では変わらない。URL（#）にも入れない
+  const [settingsTab, setSettingsTab] = useState(() => (SETTINGS_GROUPS.some((g) => g.id === getReturnTab()) ? getReturnTab() : DEFAULT_TAB)) // 設定の画面で開いているタブ（Google のログインから戻ったときは、移る前に開いていたタブ。spec-drive.md 12章）（spec-ui.md 4.1）。覚えない（再読み込みで記帳に戻る）。画面の作り直し（言語の変更・読み込みなど）では変わらない。URL（#）にも入れない
 
   // 言語。変えたら、一番外側の key に言語を入れて、全体を描き直す（前の言語の文字が、計算の結果を覚えている部品に残らないように。入力途中の内容は消える）。
   // setLanguage が、覚える（localStorage の別のキー）のと、html の lang・タブの題を合わせるのも行う。保存データには入れない
@@ -104,48 +110,83 @@ export default function App() {
   useEffect(() => { reloadAutosave() }, [reloadAutosave])
   const autosave = { ...autosaveState, reload: reloadAutosave, toggle: toggleAutosave }
 
-  // オートセーブの書き込み。データは変えない（書くだけ）。確認画面も出さない。
-  // 書き込みは1本のつなぎ（chain）に並べるので、重ならない。書くのは、そのときの一番新しいデータ（latest）。同じデータをもう書いてあれば、書かない
+  // オートセーブの書き込み。データは変えない（書くだけ）。確認画面も出さない。書くのは、そのときの一番新しいデータ（latest）。同じデータをもう書いてあれば、書かない
+  // 書き先：ドライブにつないでいるときはドライブ（ふだんの変化では書かず、大きな操作の直前 beforeReplace だけ。ON・OFF に関係なく書く）、つないでいないときはセーブフォルダー（spec-drive.md 13.2）
   const latest = useRef(data)
-  const written = useRef(null) // 最後に autosave.json へ書けたデータ
+  const written = useRef(null) // 最後に autosave.json へ書けたデータと書き先：{ data, kind }
   const skip = useRef(data) // 起動時のデータと、置き換えの直後のデータ（update の quiet）は、書かない
-  const chain = useRef(Promise.resolve())
-  const writeAutosave = useCallback(() => {
+  const chain = useRef(Promise.resolve()) // フォルダへの書き込みは、1本のつなぎに並べるので、重ならない
+  // ドライブへの書き込み：同期のつなぎ（useDriveSync）には並べず、すぐ始める（同期が触るのは orenoyome-data.json と控えだけで、autosave のファイルとは重ならない）。
+  // ドライブへの書き込み同士は、1本のつなぎ（driveWrite）に並べる（続けて2回書くと、同じ名前のファイルが2つできてしまうため）。
+  // 書き込みは、書くと決めた時点のデータで、最後まで続ける（操作で手元のデータが置き換わっても、取り消さない）。失敗したときだけ「オートセーブできません」を出す
+  const driveWrite = useRef(Promise.resolve())
+  const inflight = useRef(null) // 今書いている（または並んでいる）データと、その書き込み：{ data, job }
+  const writeDrive = useCallback(async (beforeReplace) => {
+    const d = latest.current
+    const store = slotStore()
+    if (written.current?.data === d && written.current.kind === 'drive') return setProblem(null) // もう書いてある
+    const st = await store.status()
+    const why = autosaveBlocker({ on: onRef.current, migrating: needsMigration(d) || isNewerData(d), folderState: st.state, drive: true, beforeReplace })
+    if (why === 'unavailable') return setProblem(storeErrorText(st.state)) // 電波がない・ログインが切れている
+    if (why === 'drive-idle') return // ふだんの変化：書かない。出ている知らせは、そのまま
+    if (why) return setProblem(null) // 移行中・新しい版：書かないだけ
+    if (inflight.current?.data !== d) {
+      const job = driveWrite.current.then(async () => {
+        const t0 = Date.now()
+        try {
+          await store.writeSlot('autosave.json', JSON.stringify(buildSaveFile(d, { kind: 'auto', savedAt: nowLocal(), memo: '' }), null, 2))
+          written.current = { data: d, kind: 'drive' }
+          setProblem(null)
+        } catch (e) {
+          setProblem(storeErrorText(errName(e), e.message))
+        }
+        if (import.meta.env.DEV) console.info(`[autosave] drive write ${Date.now() - t0}ms`)
+      })
+      driveWrite.current = job
+      inflight.current = { data: d, job }
+    }
+    // 操作を待たせるのは、8秒まで。書き込み自体は続く（終われば、ロード画面のオートセーブに出る）
+    await Promise.race([inflight.current.job, new Promise((ok) => setTimeout(ok, DRIVE_WAIT_LIMIT))])
+  }, [])
+  const writeAutosave = useCallback((beforeReplace = false) => {
+    if (slotStore().kind === 'drive') return writeDrive(beforeReplace)
     chain.current = chain.current.then(async () => {
       const d = latest.current
-      if (d === written.current) return setProblem(null) // 書くものがない（もう書いてある）
+      if (written.current?.data === d && written.current.kind === 'folder') return setProblem(null) // 書くものがない（もう書いてある）
       try {
-        const st = await folderStatus() // 許可は求めない
-        const why = autosaveBlocker({ on: onRef.current, migrating: needsMigration(d) || isNewerData(d), folderState: st.state }) // 新しい版のデータも、移行中と同じく書かない
+        const st = await slotStore().status() // 許可は求めない
+        const why = autosaveBlocker({ on: onRef.current, migrating: needsMigration(d) || isNewerData(d), folderState: st.state, beforeReplace }) // 新しい版のデータも、移行中と同じく書かない
         if (why === 'permission') return setProblem(storeErrorText('NotAllowedError'))
         if (why) return setProblem(null) // OFF・移行中・フォルダなし・未対応は、書かないだけ（出さない）
-        await writeSlot('autosave.json', JSON.stringify(buildSaveFile(d, { kind: 'auto', savedAt: nowLocal(), memo: '' }), null, 2))
-        written.current = d
+        await slotStore().writeSlot('autosave.json', JSON.stringify(buildSaveFile(d, { kind: 'auto', savedAt: nowLocal(), memo: '' }), null, 2))
+        written.current = { data: d, kind: 'folder' }
         setProblem(null)
       } catch (e) {
-        setProblem(storeErrorText(e.name, e.message))
+        setProblem(storeErrorText(errName(e), e.message))
       }
     })
     return chain.current
-  }, [])
-  // データを大きく変える操作（読み込み・ロード・全体の初期化・仕訳の一括削除）の直前に呼ぶ。書けるなら、今のデータを今すぐ書く（2秒待たない）。書けなくても、例外は投げない（操作はそのまま進む）
-  const autosaveBeforeReplace = writeAutosave
+  }, [writeDrive])
+  // データを大きく変える操作（読み込み・ロード・全体の初期化・仕訳の一括削除・控えから戻す）の直前に呼ぶ。書けるなら、今のデータを今すぐ書く（2秒待たない）。書けなくても、例外は投げない（操作はそのまま進む）
+  const autosaveBeforeReplace = useCallback(() => writeAutosave(true), [writeAutosave])
 
   // データが変わったら、最後の変化から2秒後に1回だけ書く
   useEffect(() => {
     latest.current = data
     if (data === skip.current) return
-    const timer = setTimeout(writeAutosave, 2000)
+    const timer = setTimeout(() => writeAutosave(), 2000)
     return () => clearTimeout(timer)
   }, [data, writeAutosave])
 
   // 「オートセーブできません」を押したとき：許可を求め、config.json を読み直し、書けていない変化があればすぐ書く
   const retryAutosave = async () => {
     try {
-      await folderStatus({ request: true })
-      await reloadAutosave()
+      if (slotStore().kind === 'folder') {
+        await folderStatus({ request: true })
+        await reloadAutosave()
+      }
     } catch { /* 書くときに、もう一度確かめて表示する */ }
-    await writeAutosave()
+    await writeAutosave(slotStore().kind === 'drive') // ドライブ：押したら、書けていない直前の分をやり直す
   }
 
   useEffect(() => {
@@ -245,11 +286,45 @@ export default function App() {
     setGeneration((g) => g + 1)
   }
 
+  // Google ドライブの同期（spec-drive.md 4章）。ドライブから下ろしたデータで置き換える（読み込みと同じ検証と移行を通ったもの r）。手元の変更には数えない（driveSkip）。
+  // 定期支払いの自動記入は、読み込みと同じく置き換えのあとに1回行う（変更には数えない）。置き換える前の、オートセーブへの書き込みはしない（下ろすたびに、直前の状態を残した autosave が上書きされないため。spec-drive.md 13.2）
+  const driveSkip = useRef(data)
+  const applyRemote = async (r) => {
+    const next = autoRecord(r.data, today()).data
+    driveSkip.current = next
+    setError('')
+    setWarning((r.warnings ?? []).join('\n'))
+    update(next, { quiet: true })
+    setGeneration((g) => g + 1)
+  }
+  const driveSync = useDriveSync({ data, skip: driveSkip, apply: applyRemote, restore: applyImported }) // 控えから戻す置き換えは、読み込みと同じ（ふつうの変更として、あとで上がる）
+  // 食い違いの確認画面（4.4）：食い違いが見つかったとき、ほかの画面・入力が開いていなければ、自動で開く（そうでなければ、帯を押すと開く）。「あとで決める」で閉じても、帯は残る。解決すると閉じる
+  const [conflictOpen, setConflictOpen] = useState(false)
+  const conflictShown = useRef(null)
+  const conflictKey = driveSync.conflict ? `${driveSync.conflict.kind}|${driveSync.conflict.theirsRev}` : null
+  useEffect(() => {
+    if (conflictKey === null) { conflictShown.current = null; setConflictOpen(false); return }
+    if (conflictShown.current !== conflictKey) {
+      conflictShown.current = conflictKey
+      if (!modalOpen()) setConflictOpen(true)
+    }
+  }, [conflictKey])
+
   const entry = route && NAV.find((e) => e.id === route.entry)
   const Screen = route && route.tab ? screens[route.tab] : null
 
-  // 「オートセーブできません」（書けないときだけ）。出し場所は、PC は右上の帯、スマホはメニューのある画面では上の帯の右端、ホーム・移行画面では中身の一番上（spec-mobile.md 第4章）
-  const notice = problem !== null && <button type="button" className="autosave-problem" title={problem} onClick={retryAutosave}>{t('save.autosaveFailed')}</button>
+  // 知らせ（書けない・つながらない・食い違いなどのとき）。1つの並び（notices）にまとめる：{ key, text, title, onPress }。出し場所（spec-mobile.md 第4章）：
+  //   PC は右上の帯に並べる／スマホはメニューのある画面では上の帯の右端に「⚠ 件数」（押すと一覧）／ホーム・移行画面では中身の一番上に1つ1行
+  // 「ドライブに保存できません」（4.5）：ログインが切れたときは、押すとログイン（移る前にいた設定のタブを覚える）、つながらないときは、押すとやり直し。食い違いは、押すと確認画面
+  const driveText = { login: t('drive.banner.failed'), offline: t('drive.banner.failed'), failed: t('drive.banner.failed'), newer: t('drive.banner.newer'), conflict: t('drive.banner.conflict') }
+  const driveTitle = { login: t('drive.bannerTitle.login'), offline: t('drive.bannerTitle.offline'), failed: t('drive.bannerTitle.failed'), newer: t('drive.bannerTitle.newer'), conflict: t('drive.bannerTitle.conflict') }
+  const drivePress = () => (driveSync.kind === 'login' ? startLogin(onSettingsScreen ? settingsTab : null) : driveSync.kind === 'newer' ? reloadApp() : driveSync.kind === 'conflict' ? setConflictOpen(true) : driveSync.retry())
+  const notices = [
+    problem !== null && { key: 'autosave', text: t('save.autosaveFailed'), title: problem, onPress: retryAutosave },
+    driveSync.kind && { key: 'drive', text: driveText[driveSync.kind], title: driveTitle[driveSync.kind], onPress: drivePress },
+  ].filter(Boolean)
+  const notice = notices.length > 0 && <>{notices.map((n) => <button key={n.key} type="button" className="autosave-problem" title={n.title} onClick={n.onPress}>{n.text}</button>)}</>
+  const noticeRows = notices.length > 0 && <div className="notice-rows">{notices.map((n) => <button key={n.key} type="button" className="autosave-problem notice-row" title={n.title} onClick={n.onPress}>{n.text}</button>)}</div>
   // 新しい版のお知らせ。PC は右上の帯、スマホは中身の一番上（上の帯のすぐ下。重ねずに流れの中に置くので、入力の欄を隠さない）
   const updateNotice = newBuild && !newer && (
     <div className="update-notice" role="status">
@@ -261,7 +336,7 @@ export default function App() {
   return (
     <ConfirmContext.Provider value={confirm}>
     <div className="frame" key={language}>
-      {entry &&<SideTabs entry={entry} currentTab={route.tab} onOpenPanel={openPanel} notice={notice} />}
+      {entry &&<SideTabs entry={entry} currentTab={route.tab} onOpenPanel={openPanel} notices={notices} />}
       <div className="main-col">
         {/* 右上の書き出し・読み込みの帯。スマホの形では出さない（同じ機能は 設定 → データ。index.css） */}
         {!newer && <header>
@@ -277,7 +352,7 @@ export default function App() {
         </header>}
         <div className="content">
           {updateNotice && <div className="phone-only">{updateNotice}</div>}
-          {!entry && notice && <div className="phone-only">{notice}</div>}
+          {!entry && noticeRows && <div className="phone-only">{noticeRows}</div>}
           {error &&<p style={{ color: 'var(--color-error)' }}>{error}</p>}
           {warning && <p className="warning">{warning}</p>}
           {newer ? (
@@ -297,13 +372,14 @@ export default function App() {
             </main>
           ) : (
             <main key={generation}>
-              {Screen ? <Screen data={data} update={update} detailId={route.detailId} openPanel={openPanel} replaceData={replaceData} autosave={autosave} autosaveBeforeReplace={autosaveBeforeReplace} language={language} onChangeLanguage={changeLanguage} onExport={doExport} onImport={doImport} tab={settingsTab} onTab={setSettingsTab} /> : <p className="error">{t('app.notFound')}</p>}
+              {Screen ? <Screen driveSync={driveSync} data={data} update={update} detailId={route.detailId} openPanel={openPanel} replaceData={replaceData} autosave={autosave} autosaveBeforeReplace={autosaveBeforeReplace} language={language} onChangeLanguage={changeLanguage} onExport={doExport} onImport={doImport} tab={settingsTab} onTab={setSettingsTab} /> : <p className="error">{t('app.notFound')}</p>}
             </main>
           )}
         </div>
       </div>
-      {panel && <SaveLoadPanel key={panel} mode={panel} data={data} onClose={() => setPanel(null)} onToSettings={setSettingsTab} onLoad={async (r) => { await applyImported(r); setPanel(null) }} />}
+      {panel && <SaveLoadPanel key={panel} mode={panel} data={data} loadBlocked={Boolean(driveSync.conflict)} onClose={() => setPanel(null)} onToSettings={setSettingsTab} onLoad={async (r) => { await applyImported(r); setPanel(null) }} />}
       {request && <ConfirmDialog key={request.id} request={request} onAnswer={answer} />}
+      {conflictOpen && driveSync.conflict && <ConflictDialog key={conflictKey} kind={driveSync.conflict.kind} describe={driveSync.describe} resolve={driveSync.resolve} onClose={() => setConflictOpen(false)} onLogin={() => startLogin(onSettingsScreen ? settingsTab : null)} />}
     </div>
     </ConfirmContext.Provider>
   )
