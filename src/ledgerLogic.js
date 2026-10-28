@@ -23,8 +23,20 @@ export const ROLE_LABELS = {
 export const KINDS = ['normal', 'opening', 'adjustment']
 // 生活費の月（仕様 3.9・5.14）。same＝受け取った月の生活費、next＝翌月の生活費
 export const LIVING = ['same', 'next']
+// 収入の使い道（収益の科目ごと。調整益を除く）：生活費／貯金／借入の返済／特別な出費。持っていない科目は 'living'（今と同じ）。生活費の収入だけが、月次の「生活費のやりくり」に数えられる
+export const USAGES = ['living', 'saving', 'repay', 'special']
 // 生活費の月の決まり（livingMonth）を持つ科目：収益のうち、調整益を除いたもの
 export const hasLivingMonth = (account) => account?.type === 'revenue' && account.key !== 'adjust-gain'
+export const usageOf = (account) => account?.usage ?? 'living'
+export const USAGE_LABELS = { living: 'usage.living', saving: 'usage.saving', repay: 'usage.repay', special: 'usage.special' } // 辞書のキー
+
+// 収益の科目の「この収入の使い道」を変える。'living'（今と同じ）にしたら項目を消す（持たないデータと同じ形に保つ）。変えると、過去の月の「生活費のやりくり」にも効く（仕訳ごとの印は付けない）。
+// 成功: { accounts } / 失敗: { error }。渡した accounts は変えない
+export function setUsage(accounts, accountId, usage, now = new Date().toISOString()) {
+  const account = accounts.find((a) => a.id === accountId)
+  if (!hasLivingMonth(account) || !USAGES.includes(usage)) return { error: t('error.usageInvalid') }
+  return { accounts: accounts.map((a) => (a.id === accountId ? (({ usage: _u, ...rest }) => ({ ...rest, ...(usage !== 'living' && { usage }), updatedAt: now }))(a) : a)) }
+}
 // 固定費の印（fixed。v10。docs/formulas.md）を持つ科目：費用のうち、調整損を除いたもの（調整損は日ごとの費用に入らない）
 export const hasFixed = (account) => account?.type === 'expense' && account.key !== 'adjust-loss'
 // 最初から固定費の初期科目（preset）と、移行で古い科目に付ける値。名前の一致では決めない（本人が作った「家賃」などは OFF から始まり、本人が ON にする）
@@ -178,7 +190,7 @@ export function validateAccountName(name, accounts, selfId) {
 // type を変えたら role を整える（asset は role 必須、liability は other、ほかは role なし）。締め日・引き落とし日は消える。
 // 収益にしたら生活費の月の決まりは same、収益から変えたら消える（区分を変えられるのは仕訳のない科目だけなので、仕訳には影響しない）
 export function changeType(account, type, role, now = new Date().toISOString()) {
-  const { role: _old, closingDay: _closing, payDay: _pay, livingMonth: _living, fixed: _fixed, ...rest } = account
+  const { role: _old, closingDay: _closing, payDay: _pay, livingMonth: _living, usage: _usage, fixed: _fixed, ...rest } = account
   return {
     ...rest, type,
     ...(type === 'asset' && { role: role ?? 'other' }), ...(type === 'liability' && { role: 'other' }),
@@ -218,21 +230,28 @@ export function livingOnAccountChange(accounts, before, after) {
 // 生活費のやりくり（仕様 5.14）。month の生活費になる収入（kind が normal で living を持つ仕訳）と、その月の支出を比べる。
 // same は日付の月、next は翌月の生活費。収益の科目が貸方なら +、借方（取り消し）なら −（両側が収益なら差し引き0）。調整益・開始残高・残高調整は数えない
 // items：{ id, date, account, amount, living }（日付順）。expenseTotal は monthReport と同じ（開始残高・残高調整は入らない）
+// 使い道が生活費でない科目（usage が saving・repay・special）の収入は、items・incomeTotal に入れず、others に分ける：{ total, byUsage: { saving, repay, special }, items（items と同じ形に usage つき）}。月の決め方（same・next）は同じ
 export function livingBalance(entries, accounts, month) {
   const byId = new Map(accounts.map((a) => [a.id, a]))
   const items = []
+  const others = { total: 0, byUsage: { saving: 0, repay: 0, special: 0 }, items: [] }
   for (const e of [...entries].sort(byDateThenCreated)) {
     if (e.kind !== 'normal' || !LIVING.includes(e.living)) continue
     const m = e.date.slice(0, 7)
     if ((e.living === 'next' ? nextMonth(m) : m) !== month) continue
     for (const [id, sign] of [[e.creditId, 1], [e.debitId, -1]]) {
       const account = byId.get(id)
-      if (hasLivingMonth(account)) items.push({ id: e.id, date: e.date, account, amount: sign * e.amount, living: e.living })
+      if (!hasLivingMonth(account)) continue
+      const usage = usageOf(account)
+      if (usage === 'living') { items.push({ id: e.id, date: e.date, account, amount: sign * e.amount, living: e.living }); continue }
+      others.items.push({ id: e.id, date: e.date, account, amount: sign * e.amount, living: e.living, usage })
+      others.byUsage[usage] += sign * e.amount
+      others.total += sign * e.amount
     }
   }
   const incomeTotal = sum(items, (i) => i.amount)
   const expenseTotal = monthReport(accounts, entries, month).expenseTotal
-  return { items, incomeTotal, expenseTotal, result: incomeTotal - expenseTotal }
+  return { items, incomeTotal, expenseTotal, result: incomeTotal - expenseTotal, others }
 }
 
 // v8 → v9：収益の科目（調整益を除く）に same、それを使う通常の仕訳に same を付ける。持っているものは変えない。元の配列は変えない
@@ -268,7 +287,29 @@ export const entryAccountOptions = (accounts, currentIds = []) =>
   accounts.filter((a) => (a.active && !ENTRY_HIDDEN_KEYS.includes(a.key)) || currentIds.includes(a.id))
 
 // living：収益の科目（調整益を除く）を使う仕訳だけが持つ。渡された値が same・next でなければ、科目の決まり（defaultLiving）
-export function validateEntryInput({ date, debitId, creditId, amountText, living }, accounts) {
+// 分割払い・リボの入力（v13）。payMode：'lump'（一括。なければ一括）・'installment'（分割）・'revolving'（リボ）。payCount・payRate は文字（分割の回数・手数料の年率。年率は空でもよい）。
+// 貸方がクレカのときだけ使う（クレカでなければ、分割・リボの選びは無視して一括）。リボは、そのクレカに revolving（毎月の支払い額）があるときだけ。成功: { pay } か {}（一括）/ 失敗: { error }
+export const PAY_DEFAULT = { payMode: 'lump', payCount: '12', payRate: '' }
+export function parsePayInput({ payMode, payCount, payRate }, creditAccount) {
+  if (!creditAccount || !isCard(creditAccount) || !payMode || payMode === 'lump') return {}
+  if (payMode === 'revolving') return creditAccount.revolving ? { pay: { mode: 'revolving' } } : { error: t('error.payRevolvingNone') }
+  if (payMode !== 'installment') return {}
+  const count = String(payCount ?? '').trim()
+  if (!/^\d{1,2}$/.test(count) || Number(count) < 2 || Number(count) > 60) return { error: t('error.payCount') }
+  const rateText = String(payRate ?? '').trim()
+  if (rateText === '') return { pay: { mode: 'installment', count: Number(count) } }
+  const rate = parseRate(rateText)
+  return rate.error ? rate : { pay: { mode: 'installment', count: Number(count), rate: rate.rate } }
+}
+// 入力欄の初めの値（編集は、その仕訳の pay から）
+export function payInitial(entry) {
+  const pay = entry?.pay
+  if (!pay) return { ...PAY_DEFAULT }
+  if (pay.mode === 'revolving') return { ...PAY_DEFAULT, payMode: 'revolving' }
+  return { payMode: 'installment', payCount: String(pay.count), payRate: pay.rate === undefined ? '' : formatRate(pay.rate) }
+}
+
+export function validateEntryInput({ date, debitId, creditId, amountText, living, payMode, payCount, payRate }, accounts) {
   if (!isDate(date)) return { error: t('error.dateInvalid') }
   const a = parseAmount(amountText)
   if (a.error) return a
@@ -276,7 +317,9 @@ export function validateEntryInput({ date, debitId, creditId, amountText, living
   if (!ids.has(debitId) || !ids.has(creditId)) return { error: t('error.chooseDebitCredit') }
   if (debitId === creditId) return { error: t('error.sameDebitCredit') }
   const fallback = defaultLiving(accounts, debitId, creditId)
-  return { date, debitId, creditId, amount: a.amount, ...(fallback !== null && { living: LIVING.includes(living) ? living : fallback }) }
+  const paid = parsePayInput({ payMode, payCount, payRate }, accounts.find((x) => x.id === creditId))
+  if (paid.error) return paid
+  return { date, debitId, creditId, amount: a.amount, ...(fallback !== null && { living: LIVING.includes(living) ? living : fallback }), ...paid }
 }
 
 export const newEntry = (input, memo, now = new Date().toISOString()) => ({
@@ -288,12 +331,13 @@ export const newEntry = (input, memo, now = new Date().toISOString()) => ({
   memo,
   kind: 'normal',
   ...(input.living && { living: input.living }),
+  ...(input.pay && { pay: input.pay }),
   createdAt: now,
   updatedAt: now,
 })
 
 // id・kind・createdAt は保つ。living は付け直す（収益の科目を使わなくなった仕訳からは消える）
-export const editEntry = ({ living: _living, ...entry }, input, memo, now = new Date().toISOString()) => ({
+export const editEntry = ({ living: _living, pay: _pay, ...entry }, input, memo, now = new Date().toISOString()) => ({
   ...entry,
   date: input.date,
   debitId: input.debitId,
@@ -301,6 +345,7 @@ export const editEntry = ({ living: _living, ...entry }, input, memo, now = new 
   amount: input.amount,
   memo,
   ...(input.living && { living: input.living }),
+  ...(input.pay && { pay: input.pay }),
   updatedAt: now,
 })
 
@@ -519,6 +564,16 @@ export function expenseBreakdown(expense, top = 5) {
 // 資産 − 負債（残高の画面の札。typeTotals の資産の残高合計 − 負債の残高合計。貸借対照表の純資産ではない）
 export const assetLiabilityGap = (rows) => typeTotals(rows, 'asset').balance - typeTotals(rows, 'liability').balance
 
+// 利率（%）の入力：半角数字と小数点（小数は 2 桁まで）、0〜100。成功: { rate }（1/100 %）
+export function parseRate(text) {
+  const m = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(String(text).trim())
+  if (!m) return { error: t('error.rateInvalid') }
+  const rate = Number(m[1]) * 100 + Number(((m[2] ?? '') + '00').slice(0, 2))
+  return rate > 10000 ? { error: t('error.rateInvalid') } : { rate }
+}
+
+export const formatRate = (rate) => String(rate / 100)
+
 // ---- 借りているお金（loans。v12）の計算 ----
 
 // その月の利率と返済額。rateHistory のうち from が月以前で一番新しい行。なければ loan 自身の rate・payment（はじめの値）
@@ -564,8 +619,9 @@ export function loanDue(loan, balance, entries, month) {
 
 // 自由に使える額 ＝ role が cash の資産の残高合計 − 負債の残高合計（取り分け・その他の資産は含めない。使わない科目も含める）
 // loans（省略可）があるときは、借入の科目の残高全体は負債の合計から外し、代わりに month の返済額（loanDue）だけを引く。loans が空（省略）なら、今までと同じ値
+// later（省略可。cardLaterTotal）：クレカの分割・リボの「先の分」。いまの請求期間より先に払う分なので、負債から引かない（0 か省略なら、今までと同じ値）
 // items：画面に並べる内訳（現金類のうち残高が0でないもの。負債があるときは「負債」を負の値で、借入の返済があるときは最後に「借入の返済」を負の値で足す）
-export function freeAmount(accounts, entries, loans = [], month = '') {
+export function freeAmount(accounts, entries, loans = [], month = '', later = 0) {
   const { rows } = accountBalances(accounts, entries)
   const cash = rows.filter((r) => r.account.type === 'asset' && r.account.role === 'cash')
   const cashTotal = sum(cash, (r) => r.balance)
@@ -573,9 +629,9 @@ export function freeAmount(accounts, entries, loans = [], month = '') {
   const liabilityTotal = sum(rows.filter((r) => r.account.type === 'liability' && !loanIds.has(r.account.id)), (r) => r.balance)
   const due = sum(loans, (l) => loanDue(l, rows.find((r) => r.account.id === l.accountId)?.balance ?? 0, entries, month))
   const items = cash.filter((r) => r.balance !== 0).map((r) => ({ id: r.account.id, name: r.account.name, balance: r.balance }))
-  if (liabilityTotal !== 0) items.push({ id: 'liability', name: TYPE_LABELS.liability, balance: -liabilityTotal })
+  if (liabilityTotal - later !== 0) items.push({ id: 'liability', name: TYPE_LABELS.liability, balance: -(liabilityTotal - later) })
   if (due !== 0) items.push({ id: 'loans', name: t('loans.dueItem'), balance: -due })
-  return { total: cashTotal - liabilityTotal - due, cashTotal, liabilityTotal, loanDue: due, items }
+  return { total: cashTotal - (liabilityTotal - later) - due, cashTotal, liabilityTotal, later, loanDue: due, items }
 }
 
 
@@ -605,9 +661,90 @@ export function closingDateOfEntry(date, closingDay) {
 export const CLOSED_FIX_MEMOS = ['確定分', '확정분']
 export const isClosedFix = (e) => e.kind === 'adjustment' && CLOSED_FIX_MEMOS.includes(e.memo)
 
+// ---- 分割払い・リボ（v13。仕訳の pay とクレカの revolving）。仕訳は総額で 1 件のまま、「いつ払うか」を請求の行に分ける ----
+// 請求の行：{ closingDate（その行が入る請求期間の締め日）, amount, entryId（リボの山の行は null） }
+// 分割 n 回：仕訳が入る請求期間から、毎月 1 行ずつ n 行。金額は総額 ÷ n の切り捨てで、端数は最初の回に足す
+export function installmentLines(entry, closingDay) {
+  const { count } = entry.pay
+  const each = Math.floor(entry.amount / count)
+  const first = closingDateOfEntry(entry.date, closingDay)
+  let month = first.slice(0, 7)
+  return Array.from({ length: count }, (_, i) => {
+    const line = { closingDate: i === 0 ? first : subscriptionDate(month, closingDay), amount: i === 0 ? entry.amount - each * (count - 1) : each, entryId: entry.id }
+    month = nextMonth(month)
+    return line
+  })
+}
+
+// リボ：カードごとの 1 つの山。リボの仕訳が最初に入る請求期間から、毎月「山に今期の仕訳を足し、min(毎月の支払い額, 山) を払う」を、山が 0 になるまで。
+// ponytail: 600 か月で打ち切る（毎月の額が小さすぎて終わらないときは、その先の分は数えない）
+export function revolvingLines(entries, closingDay, monthly) {
+  const byClosing = new Map()
+  for (const e of entries) {
+    const closing = closingDateOfEntry(e.date, closingDay)
+    byClosing.set(closing, (byClosing.get(closing) ?? 0) + e.amount)
+  }
+  if (byClosing.size === 0) return []
+  const lastEntry = [...byClosing.keys()].sort().at(-1)
+  const lines = []
+  let closing = [...byClosing.keys()].sort()[0]
+  let pool = 0
+  for (let i = 0; i < 600; i++) {
+    pool += byClosing.get(closing) ?? 0
+    const pay = Math.min(monthly, pool)
+    if (pay > 0) lines.push({ closingDate: closing, amount: pay, entryId: null })
+    pool -= pay
+    if (pool === 0 && closing >= lastEntry) break
+    closing = subscriptionDate(nextMonth(closing.slice(0, 7)), closingDay)
+  }
+  return lines
+}
+
+// 手数料の見込み（仕訳にも自由に使える額にも入れない）。payments は元金の支払いの並び（毎月）、rate は年率の 1/100 %。
+// 毎月の手数料 ＝ 支払い前の残り × 年率 ÷ 12（円未満は切り捨て。借入の利息と同じ考え）。返す形：{ total, months: [毎月の手数料] }
+export function feeEstimate(payments, rate) {
+  let left = payments.reduce((n, x) => n + x, 0)
+  const months = payments.map((pay) => {
+    const fee = Math.floor((left * rate) / 120000)
+    left -= pay
+    return fee
+  })
+  return { total: months.reduce((n, x) => n + x, 0), months }
+}
+
+// そのカードで、分割・リボの印がある仕訳が請求の行に分かれたもの（締め日の古い順）。リボの仕訳は、カードに revolving があるときだけ山にする（なければ一括として、ここには出ない）
+const isPayEntry = (e, card) => e.kind === 'normal' && e.creditId === card.id && e.pay !== undefined && (e.pay.mode === 'installment' || (e.pay.mode === 'revolving' && card.revolving !== undefined))
+export function payLines(card, entries) {
+  const own = entries.filter((e) => isPayEntry(e, card))
+  const lines = [
+    ...own.filter((e) => e.pay.mode === 'installment').flatMap((e) => installmentLines(e, card.closingDay)),
+    ...revolvingLines(own.filter((e) => e.pay.mode === 'revolving'), card.closingDay, card.revolving?.monthly ?? 0),
+  ]
+  return lines.sort((x, y) => x.closingDate.localeCompare(y.closingDate))
+}
+
+// payLines を、分割とリボに分けたもの（見やすさの棒グラフ用。並びは締め日順にしない）
+export function payLinesByMode(card, entries) {
+  const own = entries.filter((e) => isPayEntry(e, card))
+  return {
+    installment: own.filter((e) => e.pay.mode === 'installment').flatMap((e) => installmentLines(e, card.closingDay)),
+    revolving: revolvingLines(own.filter((e) => e.pay.mode === 'revolving'), card.closingDay, card.revolving?.monthly ?? 0),
+  }
+}
+
+// 分割の買い物の名前。メモがあればメモ、空なら「科目・買った日」（例：家具・9/15）。fallback は、代わりの名前を使ったとき true
+export function payItemName(entry, accounts) {
+  if (entry.memo.trim() !== '') return { name: entry.memo, fallback: false }
+  const account = accounts.find((a) => a.id === entry.debitId)?.name ?? ''
+  return { name: t('plan.nameFallback', { account, month: Number(entry.date.slice(5, 7)), day: Number(entry.date.slice(8, 10)) }), fallback: true }
+}
+
 // カード1枚の計算。card でない科目・存在しない id は null
 // 数える仕訳（符号つき）：貸方＝カード（opening は除く。adjustment は含む）は ＋、借方＝カードの adjustment は −。借方＝カードの normal（返済・返品）は数えない
-// unbilled（未請求の利用額）＝最後の締め日より後の合計。確定分の調整（isClosedFix）は、日付に関係なく最後の締め日の期に入り、unbilled には入らない。next（次の引き落とし分）＝残高 − unbilled
+// unbilled（未請求の利用額）＝最後の締め日より後の合計。確定分の調整（isClosedFix）は、日付に関係なく最後の締め日の期に入り、unbilled には入らない。
+// 分割・リボの仕訳（isPayEntry）は、請求の行に分けて数える：最後の締め日の後〜いまの請求期間の締め日（nextClosing）までの行は unbilled と periods に、
+// それより先の行は later（先の分。periods には入れず、laterLines に締め日の古い順に持つ）に入る。
+// next（次の引き落とし分）＝残高 − unbilled − later（分割・リボがなければ later は 0 で、今までと同じ）
 // periods：請求期間ごとの利用額 [{ closingDate, amount }]（締め日の新しい順。合計が 0 でない期間だけ）
 export function cardReport(accounts, entries, accountId, today) {
   const account = accounts.find((a) => a.id === accountId)
@@ -615,9 +752,11 @@ export function cardReport(accounts, entries, accountId, today) {
   const { closingDay, payDay } = account
   const balance = accountBalances(accounts, entries).rows.find((r) => r.account.id === accountId).balance
   const lastClosing = lastClosingDate(closingDay, today)
+  const nextClosing = subscriptionDate(nextMonth(lastClosing.slice(0, 7)), closingDay) // いまの請求期間の締め日
   const byPeriod = {}
   let unbilled = 0
   for (const e of entries) {
+    if (isPayEntry(e, account)) continue // 下で、請求の行に分けて数える
     const amount = e.creditId === accountId && e.kind !== 'opening' ? e.amount : e.debitId === accountId && e.kind === 'adjustment' ? -e.amount : 0
     if (amount === 0) continue
     const fix = isClosedFix(e)
@@ -625,9 +764,106 @@ export function cardReport(accounts, entries, accountId, today) {
     const closing = fix ? lastClosing : closingDateOfEntry(e.date, closingDay)
     byPeriod[closing] = (byPeriod[closing] ?? 0) + amount
   }
+  const laterLines = []
+  for (const line of payLines(account, entries)) {
+    if (line.closingDate > nextClosing) { laterLines.push(line); continue }
+    if (line.closingDate > lastClosing) unbilled += line.amount
+    byPeriod[line.closingDate] = (byPeriod[line.closingDate] ?? 0) + line.amount
+  }
+  const later = laterLines.reduce((n, l) => n + l.amount, 0)
   const periods = Object.entries(byPeriod).filter(([, amount]) => amount !== 0).map(([closingDate, amount]) => ({ closingDate, amount })).sort((a, b) => b.closingDate.localeCompare(a.closingDate))
-  return { account, closingDay, payDay, balance, lastClosing, unbilled, next: balance - unbilled, payDate: payDateOf(lastClosing, payDay), periods }
+  return { account, closingDay, payDay, balance, lastClosing, unbilled, later, laterLines, next: balance - unbilled - later, payDate: payDateOf(lastClosing, payDay), periods }
 }
+
+// カード 1 枚の「まだ払っていない分」（分割・リボ。card は cardReport の結果）。最後の締め日（lastClosing）より後の行が、残り。
+// installments：分割の仕訳ごと { entry, count, rate, left（あと何回）, monthly（毎月の額）, remaining（残りの合計）, endClosing（最後の締め日）, fee（これからの手数料の見込み。年率がなければ null） }（終わりの近い順。もう残りがないものは出さない）
+// revolving：カードにリボの設定があり、山に残りがあるとき { monthly, rate, left, remaining, endClosing, fee }。なければ null
+export function cardPayPlans(card, entries) {
+  const { account, lastClosing } = card
+  const own = entries.filter((e) => isPayEntry(e, account))
+  const installments = own
+    .filter((e) => e.pay.mode === 'installment')
+    .map((entry) => {
+      const lines = installmentLines(entry, account.closingDay)
+      const left = lines.filter((l) => l.closingDate > lastClosing)
+      return {
+        entry, count: entry.pay.count, rate: entry.pay.rate, left: left.length, monthly: lines.at(-1).amount, remaining: sum(left, (l) => l.amount), endClosing: lines.at(-1).closingDate,
+        fee: entry.pay.rate === undefined ? null : feeEstimate(left.map((l) => l.amount), entry.pay.rate).total,
+      }
+    })
+    .filter((p) => p.left > 0)
+    .sort((a, b) => a.endClosing.localeCompare(b.endClosing) || a.entry.date.localeCompare(b.entry.date))
+  let revolving = null
+  if (account.revolving) {
+    const lines = revolvingLines(own.filter((e) => e.pay.mode === 'revolving'), account.closingDay, account.revolving.monthly)
+    const left = lines.filter((l) => l.closingDate > lastClosing)
+    if (left.length > 0) {
+      revolving = { monthly: account.revolving.monthly, rate: account.revolving.rate, left: left.length, remaining: sum(left, (l) => l.amount), endClosing: lines.at(-1).closingDate, fee: feeEstimate(left.map((l) => l.amount), account.revolving.rate).total }
+    }
+  }
+  return { installments, revolving }
+}
+
+// 先の分（いまの請求期間の、次の請求期間から先に入る分割・リボ）が最初に引き落とされる日（'YYYY-MM-DD'）。report は cardReport の結果。画面では「12/28 以降に払う分割・リボ」と言う
+export function laterFromDate(report) {
+  const nextClosing = subscriptionDate(nextMonth(report.lastClosing.slice(0, 7)), report.closingDay) // いまの請求期間の締め日
+  return payDateOf(subscriptionDate(nextMonth(nextClosing.slice(0, 7)), report.closingDay), report.payDay)
+}
+
+// 「次の引き落とし」の額と日（札・表。基本のテーマ）。締めた請求が残っているとき（report.next が 0 でない）は、その額と引き落とし日（report.payDate）。
+// 0 のときは、次の引き落とし日（いまの請求期間の分）と未請求の利用額（report.unbilled）。recordPending：残っていて、引き落とし日がもう過ぎている（today を渡したとき）＝「引き落としの記録がまだです」
+export function nextDebit(report, today = '') {
+  if (report.next !== 0) return { amount: report.next, date: report.payDate, recordPending: report.payDate < today }
+  const nextClosing = subscriptionDate(nextMonth(report.lastClosing.slice(0, 7)), report.closingDay) // いまの請求期間の締め日
+  return { amount: report.unbilled, date: payDateOf(nextClosing, report.payDay), recordPending: false }
+}
+
+// 日付 'YYYY-MM-DD' を「12/28」の形に
+export const monthDay = (date) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
+
+// 先の分の請求の予定：締め日ごとの合計 [{ closingDate, amount }]（締め日の古い順）。laterLines は cardReport の結果
+export function laterPeriods(laterLines) {
+  const byClosing = new Map()
+  for (const l of laterLines) byClosing.set(l.closingDate, (byClosing.get(l.closingDate) ?? 0) + l.amount)
+  return [...byClosing].map(([closingDate, amount]) => ({ closingDate, amount })).sort((a, b) => a.closingDate.localeCompare(b.closingDate))
+}
+
+// 一覧・元帳の小さい印：「分割 12」「リボ」
+// クレカ個別ページの「このカードの分割・リボの仕訳」：そのカードの分割・リボの買い物（新しい順。終わった分割も入る）。card は cardReport の結果。
+// 分割は count（回数）・done（締め日が最後の締め日以前の回の数）、リボは counted（カードにリボの設定があるか。なければ一括として数えている）
+const newestFirst = (a, b) => (a.date === b.date ? (a.createdAt < b.createdAt ? 1 : -1) : a.date < b.date ? 1 : -1)
+export function cardPayEntries(card, entries) {
+  const { account, lastClosing } = card
+  return entries
+    .filter((e) => e.kind === 'normal' && e.creditId === account.id && e.pay !== undefined)
+    .sort(newestFirst)
+    .map((entry) => entry.pay.mode === 'installment'
+      ? { entry, count: entry.pay.count, done: installmentLines(entry, account.closingDay).filter((l) => l.closingDate <= lastClosing).length, counted: true }
+      : { entry, count: null, done: null, counted: account.revolving !== undefined })
+}
+
+// そのカードの引き落とし（借方＝カードの通常の仕訳。返済・返品も入る）。新しい順
+export const cardRepayEntries = (card, entries) => entries.filter((e) => e.kind === 'normal' && e.debitId === card.account.id).sort(newestFirst)
+
+export const payMarkText = (pay) => (pay.mode === 'revolving' ? t('entries.payMarkRevolving') : t('entries.payMarkInstallment', { count: pay.count }))
+
+// クレカのリボの設定（毎月の支払い額・年率）を変える。monthlyText と rateText が両方空なら、設定をやめる（revolving を消す。リボの仕訳は一括として数える）。
+// 毎月の支払い額は 1 以上の整数、年率は 0〜100（rateText が空なら 0）。成功: { accounts } / 失敗: { error }。渡した accounts は変えない
+export function changeCardRevolving(accounts, accountId, { monthlyText, rateText }, now = new Date().toISOString()) {
+  const account = accounts.find((a) => a.id === accountId)
+  if (!account || !isCard(account)) return { error: t('error.cardNotFound') }
+  const monthly = String(monthlyText).trim()
+  const rateRaw = String(rateText).trim()
+  if (monthly === '' && rateRaw === '') return { accounts: accounts.map((a) => (a.id === accountId ? (({ revolving: _r, ...rest }) => ({ ...rest, updatedAt: now }))(a) : a)) }
+  const m = parseAmount(monthly)
+  if (m.error) return m
+  const rate = rateRaw === '' ? { rate: 0 } : parseRate(rateRaw)
+  if (rate.error) return rate
+  return { accounts: accounts.map((a) => (a.id === accountId ? { ...a, revolving: { monthly: m.amount, rate: rate.rate }, updatedAt: now } : a)) }
+}
+
+// 全カードの「先の分」の合計（自由に使える額から引かない分）
+export const cardLaterTotal = (accounts, entries, today) => cardReports(accounts, entries, today).reduce((n, r) => n + r.later, 0)
 
 // 請求期間の表示用の整形。cardReport の periods に label（「10/15締め」。期間が年をまたぐときだけ「2025/12/15締め」）と
 // open（最後の締め日より後＝まだ確定していない期間）を足す。lastClosing は cardReport の結果。順序と金額は変えない
@@ -834,8 +1070,12 @@ export function balanceSheet(accounts, entries, month) {
   return { month, assets, assetTotal, liabilities, liabilityTotal, equity, profit, equityTotal, liabilityEquityTotal, balanced: assetTotal === liabilityEquityTotal }
 }
 
+// 返し始めの前の奨学金か（kind が scholarship で repayFrom があり、月がそれより前）。返し始めの月からは普通の借入。repayFrom のない奨学金も普通の借入（loanDue と同じ向き）
+export const isScholarshipBefore = (loan, month) => loan.kind === 'scholarship' && loan.repayFrom !== undefined && month < loan.repayFrom
+
 // 月末の資産・負債と、その月の収支。記録のない月より前は出さない。
-export function balanceTrend(accounts, entries, endMonth, today, count = 12) {
+// loans（省略可）：返す前の奨学金を分けた値（netExScholarship・scholarshipBefore・scholarshipFrom・scholarships）と、純資産の内訳（cashTotal・savingTotal・otherAssetTotal・borrowTotal。借入は返す前の奨学金を除く負債）を足す
+export function balanceTrend(accounts, entries, endMonth, today, count = 12, loans = []) {
   if (!entries.length || !endMonth || !today || count <= 0) return []
   const first = entries.reduce((m, e) => e.date.slice(0, 7) < m ? e.date.slice(0, 7) : m, entries[0].date.slice(0, 7))
   let month = endMonth < today.slice(0, 7) ? endMonth : today.slice(0, 7)
@@ -843,11 +1083,32 @@ export function balanceTrend(accounts, entries, endMonth, today, count = 12) {
   while (month >= first && result.length < count) {
     const sheet = balanceSheet(accounts, entries, month)
     const rows = accountBalances(accounts, entries.filter((e) => e.date.slice(0, 7) <= month)).rows
-    const earmarkTotal = sum(rows.filter((r) => r.account.type === 'asset' && r.account.role === 'earmark'), (r) => r.balance)
-    result.push({ month, assetTotal: sheet.assetTotal, liabilityTotal: sheet.liabilityTotal, netTotal: sheet.assetTotal - sheet.liabilityTotal, earmarkTotal, result: monthReport(accounts, entries, month).result })
+    const assetOf = (role) => sum(rows.filter((r) => r.account.type === 'asset' && (role === 'other' ? r.account.role !== 'cash' && r.account.role !== 'earmark' : r.account.role === role)), (r) => r.balance)
+    const earmarkTotal = assetOf('earmark')
+    const scholarships = loans.filter((l) => isScholarshipBefore(l, month)).map((l) => ({ id: l.id, balance: rows.find((r) => r.account.id === l.accountId)?.balance ?? 0, repayFrom: l.repayFrom }))
+    const scholarshipBefore = sum(scholarships, (x) => x.balance)
+    const netTotal = sheet.assetTotal - sheet.liabilityTotal
+    result.push({
+      month, assetTotal: sheet.assetTotal, liabilityTotal: sheet.liabilityTotal, netTotal, earmarkTotal, result: monthReport(accounts, entries, month).result,
+      cashTotal: assetOf('cash'), savingTotal: earmarkTotal, otherAssetTotal: assetOf('other'), borrowTotal: sheet.liabilityTotal - scholarshipBefore,
+      scholarshipBefore, scholarshipFrom: scholarships.length ? scholarships.map((x) => x.repayFrom).sort()[0] : null, scholarships, netExScholarship: netTotal + scholarshipBefore,
+    })
     month = previousMonth(month)
   }
   return result
+}
+
+// 先月からの純資産（奨学金を除く）の増減と、その理由。cur・prev は balanceTrend の行。
+// 理由：収支（その月の収支）／奨学金の受け取り（返す前の奨学金の残りの増減）／奨学金の返し始め（先月は返す前だった分が、今月から借入になる）／そのほか（開始残高の追加など。差から引いた残り）。0 の理由は出さない。足すと必ず差に合う
+export function netChangeReasons(cur, prev) {
+  const change = cur.netExScholarship - prev.netExScholarship
+  const was = new Map(prev.scholarships.map((x) => [x.id, x.balance]))
+  const now = new Map(cur.scholarships.map((x) => [x.id, x.balance]))
+  const receive = sum(cur.scholarships, (x) => x.balance - (was.get(x.id) ?? 0))
+  const start = -sum(prev.scholarships.filter((x) => !now.has(x.id)), (x) => x.balance)
+  const reasons = [{ id: 'result', amount: cur.result }, { id: 'receive', amount: receive }, { id: 'start', amount: start }]
+  reasons.push({ id: 'other', amount: change - sum(reasons, (r) => r.amount) })
+  return { change, reasons: reasons.filter((r) => r.amount !== 0) }
 }
 
 // B/S の勘定式の並び（左：資産の部、右：負債の部と純資産の部）。結果は balanceSheet のものを並べるだけ。
@@ -1432,8 +1693,8 @@ export function budgetStatus(budgets, accounts, report, goalActuals, month) {
 // 残り・不足は budgetStatus（予算の表と同じ計算）。マイナス（超過）は0として扱う（実績が予算を超えた科目は、実績がもう自由に使える額から引かれているので、それ以上は引かない）。
 // 予算のない科目は見ない。使わない設定の科目も、その月の予算があれば対象。月初に大きく減るのは、意図した動き
 // 返す形：{ total（予算反映）, free（実際の額）, reserved（引いた額の合計）, items: [{ id, name, amount }]（上限の科目 → 目標の科目の順。引く額が0の科目は出さない） }
-export function budgetFreeAmount(accounts, entries, budgets, month, loans = []) {
-  const free = freeAmount(accounts, entries, loans, month).total
+export function budgetFreeAmount(accounts, entries, budgets, month, loans = [], later = 0) {
+  const free = freeAmount(accounts, entries, loans, month, later).total
   const status = budgetStatus(budgets, accounts, monthReport(accounts, entries, month), goalActualMap(entries, accounts, budgets, month), month)
   const items = [
     ...status.limits.rows.map((r) => ({ id: r.account.id, name: r.account.name, amount: Math.max(0, r.remaining) })),

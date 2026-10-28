@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import './entries.css'
 import {
-  entryAccountOptions, validateEntryInput, livingAccount, defaultLiving, livingOnAccountChange, livingOptionLabel, newEntry, editEntry, lastCreditId, lastNormalEntry, copyInputFromEntry, presetToFormValues, presetSummary, canMarkNoSpend, isNoSpendShown, noSpendPickerDays, applyNoSpendPick, validateEntryPresetInput, newEntryPreset, canAddEntryPreset, markNoSpendDay, unmarkNoSpendDay, NO_SPEND_BACK_DAYS, favoriteOptionGroups, accountLabelWithType,
-  entriesOfMonth, groupEntriesByDate, groupByTens, canEditEntry, formatMoney, formatYen, currencyUnit, roadDays,
+  entryAccountOptions, validateEntryInput, livingAccount, usageOf, defaultLiving, livingOnAccountChange, livingOptionLabel, newEntry, editEntry, lastCreditId, lastNormalEntry, copyInputFromEntry, presetToFormValues, presetSummary, canMarkNoSpend, isNoSpendShown, noSpendPickerDays, applyNoSpendPick, validateEntryPresetInput, newEntryPreset, canAddEntryPreset, markNoSpendDay, unmarkNoSpendDay, NO_SPEND_BACK_DAYS, favoriteOptionGroups, accountLabelWithType,
+  entriesOfMonth, groupEntriesByDate, groupByTens, canEditEntry, formatMoney, formatYen, currencyUnit, roadDays, isCard, PAY_DEFAULT, payInitial, payMarkText,
 } from '../ledgerLogic.js'
 import { today } from '../today.js'
+import { toHash } from '../route.js'
+import { loanOfEntry } from '../loanView.js'
+import { holdingOfEntry } from '../investView.js'
 import { t } from '../text.js'
 import { useConfirm } from './ConfirmDialog.jsx'
 import { usePhone } from '../layout.js'
@@ -44,6 +47,38 @@ function Field({ label, className = '', children }) {
   return <label className={`field ${className}`.trim()}><span className="field-label">{label}</span>{children}</label>
 }
 
+const PAY_COUNTS = ['2', '3', '6', '12', '24'] // 分割の回数の札。「その他」を押すと、回数の入力欄（2〜60）が開く
+// 支払い方法の入力。value：{ payMode, payCount, payRate }、card：貸方のクレカの科目（revolving があるときだけリボを選べる）
+function PayFields({ value, onChange, card }) {
+  const { payMode, payCount, payRate } = value
+  const set = (patch) => onChange({ ...value, ...patch })
+  const [other, setOther] = useState(() => !PAY_COUNTS.includes(payCount)) // 「その他」を開いているか（札にない回数の仕訳を直すときは、初めから開く）
+  useEffect(() => { if (payMode !== 'installment') setOther(false) }, [payMode]) // 一括・リボに戻したら、閉じる（追加のあとの初期化も同じ）
+  const modes = [['lump', 'entries.payLump'], ['installment', 'entries.payInstallmentBtn'], ['revolving', 'entries.payRevolvingBtn']]
+  return (
+    <div className="pay-fields" role="group" aria-label={t('entries.payLabel')}>
+      <span className="pay-label">{t('entries.payLabel')}</span>
+      <div className="pay-modes">
+        {modes.map(([mode, label]) => {
+          const disabled = mode === 'revolving' && card.revolving === undefined
+          return <button key={mode} type="button" className="pay-mode" aria-pressed={payMode === mode} disabled={disabled} title={disabled ? t('entries.payRevolvingHint') : undefined} onClick={() => set({ payMode: mode })}>{t(label)}</button>
+        })}
+      </div>
+      {payMode === 'installment' && (
+        <div className="pay-detail">
+          <div className="pay-counts" role="group" aria-label={t('entries.payCountAria')}>
+            {PAY_COUNTS.map((n) => <button key={n} type="button" className="pay-count" aria-pressed={!other && payCount === n} onClick={() => { setOther(false); set({ payCount: n }) }}>{n}</button>)}
+            <button type="button" className="pay-count pay-other" aria-pressed={other} aria-expanded={other} onClick={() => { setOther(true); if (PAY_COUNTS.includes(payCount)) set({ payCount: '' }) }}>{t('entries.payOther')}</button>
+          </div>
+          {other && <label className="pay-other-input"><input className="pay-count-input" inputMode="numeric" autoFocus aria-label={t('entries.payCountAria')} value={payCount} onChange={(e) => set({ payCount: e.target.value })} /><span>{t('entries.payCountUnit')}</span></label>}
+          <label className="pay-rate"><span>{t('entries.payRate')}</span><input inputMode="decimal" aria-label={t('entries.payRate')} placeholder={t('entries.payRateHint')} value={payRate} onChange={(e) => set({ payRate: e.target.value })} /></label>
+        </div>
+      )}
+      {card.revolving === undefined && <span className="pay-hint">{t('entries.payRevolvingHint')}</span>}
+    </div>
+  )
+}
+
 // 入力・編集で共用。エラーのときは入力途中の内容を消さない。
 // currentIds は編集フォームだけが渡す（その仕訳が今使っている科目を選択肢に残す）。新規入力では渡さない。
 // variant='sheet'：下から出る編集画面の形（縦に並べ、メモは複数行、下に「やめる」「保存」）。onValues(f)：入力が変わるたびに呼ぶ（編集画面が、変えたかを知るため）
@@ -63,7 +98,7 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
   const [error, setError] = useState('')
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }))
   // 借方・貸方を変えたら、生活費の月も整える（同じ科目のままなら選び方を残し、別の収益の科目なら、その科目の決まり。収益がなくなれば消す）
-  const setAccount = (k) => (v) => setF((s) => { const next = { ...s, [k]: v }; return { ...next, living: livingOnAccountChange(accounts, s, next) } })
+  const setAccount = (k) => (v) => setF((s) => { const next = { ...s, [k]: v, ...(k === 'creditId' ? PAY_DEFAULT : {}) }; return { ...next, living: livingOnAccountChange(accounts, s, next) } }) // 貸方を変えたら、支払い方法は一括に戻す
   const swap = () => {
     const next = swapDebitCredit(accounts, f)
     if (!next) return
@@ -147,7 +182,8 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
   ) : null
   // 「前回と同じ入力」「今日は使っていない」「プリセットに追加」のボタン：新しい仕訳の枠（欄）の外、見出しの右端（群青の札・基本）／入力画面の上端（スマホ）に出す。quickHost（見出しの中の置き場所）があれば、そこへ移す。なければ、欄の中に出す
   const placeQuick = quickRow && quickHost ? createPortal(quickRow, quickHost) : quickRow
-  const showLiving = livingAccount(accounts, f.debitId, f.creditId) !== undefined // 収益の科目（調整益を除く）を選んだときだけ
+  const showLiving = usageOf(livingAccount(accounts, f.debitId, f.creditId)) === 'living' && livingAccount(accounts, f.debitId, f.creditId) !== undefined // 収益の科目（調整益を除く）で、使い道が生活費のときだけ
+  const payCard = (basicPc || basicPhone) && !adding ? accounts.find((a) => a.id === f.creditId && isCard(a)) : undefined // 貸方がクレカのときだけ、支払い方法（一括／分割／リボ）を出す。基本の PC・スマホだけ
   useEffect(() => { onValues?.(f) }, [f]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = (e) => {
@@ -156,7 +192,7 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
     if (r.error) return setError(r.error)
     setError('')
     onSubmit(r, f.memo)
-    setF((s) => ({ ...s, amount: '', memo: '', living: defaultLiving(accounts, s.debitId, s.creditId) })) // 成功時は金額とメモを空にし、生活費の月は科目の決まりに戻す（一度きりの変更を、次の仕訳に残さない）
+    setF((s) => ({ ...s, amount: '', memo: '', living: defaultLiving(accounts, s.debitId, s.creditId), ...PAY_DEFAULT })) // 成功時は金額とメモを空にし、生活費の月は科目の決まり・支払い方法は一括に戻す（一度きりの変更を、次の仕訳に残さない）
   }
 
   const fields = {
@@ -165,6 +201,7 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
     debit: <Field label={t('common.debit')}><AccountSelect label={t('common.debit')} value={f.debitId} onChange={setAccount('debitId')} options={options} favoriteIds={favorites.debit} /></Field>,
     credit: <Field label={t('common.credit')}><AccountSelect label={t('common.credit')} value={f.creditId} onChange={setAccount('creditId')} options={options} favoriteIds={favorites.credit} /></Field>,
     swap: swapOn && !swapQuick && <span className="swap-slot">{swapButton}</span>,
+    pay: payCard && <PayFields value={f} onChange={(v) => setF((s) => ({ ...s, payMode: v.payMode, payCount: v.payCount, payRate: v.payRate }))} card={payCard} />,
     living: showLiving && (
       <Field label={t('living.month')} className="living">
         <select aria-label={t('living.month')} value={f.living ?? ''} onChange={(e) => set('living')(e.target.value)}>
@@ -229,6 +266,7 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
         {fields.date}
         {fields.amount}
         <div className="sheet-pair">{fields.debit}{fields.swap}{fields.credit}</div>
+        {fields.pay}
         {fields.living}
         <Field label={t('common.memo')}><textarea className="memo-input" rows={3} aria-label={t('common.memo')} value={f.memo} onChange={(e) => set('memo')(e.target.value)} /></Field>
         {error && <span className="error">{error}</span>}
@@ -252,6 +290,7 @@ export function EntryForm({ accounts, initial, submitLabel, submitIcon = 'plus',
         <Field label={t('common.memo')} className="b-memo"><input className="memo-input" aria-label={t('common.memo')} value={f.memo} onChange={(e) => set('memo')(e.target.value)} /></Field>
         <button className="b-primary"><Icon name={submitIcon} />{submitLabel}</button>
         {onCancel && <button type="button" onClick={onCancel}><Icon name="close" />{t('entries.sheetClose')}</button>}
+        {fields.pay}
         {fields.living}
         {presetRow}
         {placeQuick}
@@ -284,7 +323,7 @@ export const KIND_LABELS = {
   get adjustment() { return t('entries.kind.adjustment') },
 }
 
-function EntryRow({ entry, number, accounts, favorites, currency, editing, onEdit, onCancel, onSave, onDelete, marked, markRef }) {
+function EntryRow({ entry, number, accounts, formAccounts, lock, favorites, currency, editing, onEdit, onCancel, onSave, onDelete, marked, markRef }) {
   const gunjoPc = useGunjoPc()
   const basicPc = useBasicPc()
   const name = (id) => accounts.find((a) => a.id === id)?.name ?? ''
@@ -292,8 +331,8 @@ function EntryRow({ entry, number, accounts, favorites, currency, editing, onEdi
     return (
       <li>
         <EntryForm
-          accounts={accounts}
-          initial={{ date: entry.date, amount: String(entry.amount), debitId: entry.debitId, creditId: entry.creditId, memo: entry.memo, living: entry.living ?? null }}
+          accounts={formAccounts ?? accounts}
+          initial={{ date: entry.date, amount: String(entry.amount), debitId: entry.debitId, creditId: entry.creditId, memo: entry.memo, living: entry.living ?? null, ...payInitial(entry) }}
           currentIds={[entry.debitId, entry.creditId]}
           favorites={favorites}
           submitLabel={t('common.save')}
@@ -335,12 +374,13 @@ function EntryRow({ entry, number, accounts, favorites, currency, editing, onEdi
         <span className="cell b-entry-memo">
           {KIND_LABELS[entry.kind] && <span className="note">{t('entries.kindNote', { kind: KIND_LABELS[entry.kind] })}</span>}
           {entry.memo}
+          {entry.pay && <span className="pay-mark">{payMarkText(entry.pay)}</span>}
         </span>
         <span className="cell">{name(entry.debitId)}</span>
         <span className="cell">{name(entry.creditId)}</span>
         <span className="amount">{formatYen(entry.amount)}</span>
         <span className="b-entry-ops">
-          {canEditEntry(entry) && <>
+          {lock ? <a className="b-loan-link" href={lock.href}>{t(lock.label)}</a> : canEditEntry(entry) && <>
             <IconButton icon="edit" label={t('common.edit')} onClick={onEdit} />
             <IconButton icon="trash" className="b-danger" label={t('common.delete')} onClick={onDelete} />
           </>}
@@ -371,7 +411,8 @@ function EntryRow({ entry, number, accounts, favorites, currency, editing, onEdi
 }
 
 // スマホの幅の1件（spec-mobile.md 5.2）：2行のカード。押すと開く（開いている行は1つだけ。Entries が持つ）。開くと、全部の文字と、編集・削除（開始残高・残高調整は種類だけ）が出る
-function EntryCard({ entry, number, accounts, currency, open, onToggle, onEdit, onDelete, marked, markRef }) {
+function EntryCard({ entry, number, accounts, lock, currency, open, onToggle, onEdit, onDelete, marked, markRef }) {
+  const basicPhone = useBasicPhone()
   const name = (id) => accounts.find((a) => a.id === id)?.name ?? ''
   const detailId = `card-${entry.id}`
   return (
@@ -381,9 +422,10 @@ function EntryCard({ entry, number, accounts, currency, open, onToggle, onEdit, 
         <span className="names">{name(entry.debitId)}{t('entries.pairSeparator')}{name(entry.creditId)}</span>
         <span className="amount">{formatMoney(entry.amount, currency)}</span>
         {entry.memo && <span className="memo">{entry.memo}</span>}
+        {entry.pay && basicPhone && <span className="pay-mark">{payMarkText(entry.pay)}</span>}
       </button>
       <div id={detailId} className="card-actions" hidden={!open}>
-        {canEditEntry(entry) ? (
+        {lock ? <a className="b-loan-link" href={lock.href}>{t(lock.label)}</a> : canEditEntry(entry) ? (
           <>
             <IconButton icon="edit" label={t('common.edit')} withText onClick={onEdit} />
             <IconButton icon="trash" label={t('common.delete')} withText className="danger" onClick={onDelete} />
@@ -393,6 +435,9 @@ function EntryCard({ entry, number, accounts, currency, open, onToggle, onEdit, 
     </li>
   )
 }
+
+const loanHref = (loanId) => toHash({ entry: 'ledger', tab: 'loans', detailId: loanId }) // 借入の仕訳は、借入のページで直す
+const investHref = (holdingId) => toHash({ entry: 'ledger', tab: 'invest', detailId: holdingId }) // 投資の銘柄の仕訳は、投資のページで直す
 
 const ORDER_LABELS = { asc: 'entries.orderAsc', desc: 'entries.orderDesc' } // 日付の枠の並びの切り替えボタンの文言（辞書のキー）
 
@@ -435,10 +480,17 @@ export default function Entries({ data, update, detailId = null }) { // detailId
     setMonth(input.date.slice(0, 7)) // 追加した仕訳が見える月に切り替える
     setCreating(false) // スマホの入力画面は、追加できたら閉じる
   }
-  const lastEntry = lastNormalEntry(entries, data.subscriptions) // 「前回と同じ入力」の元（定期支払いの自動記入は除く）
+  // 基本のテーマだけ：借入の仕訳は、借入のページで直す。ここでは直す・消すを出さず、新しい仕訳の科目の選択肢からも借入の科目を外す
+  const lockLoans = basicPc || basicPhone
+  const loans = data.loans ?? []
+  const holdings = data.holdings ?? []
+  const lockOf = (e) => { const l = loanOfEntry(loans, e); if (l) return { href: loanHref(l.id), label: 'entries.loanLink' }; const h = holdingOfEntry(holdings, e); return h ? { href: investHref(h.id), label: 'entries.investLink' } : undefined }
+  const lockedIds = new Set([...loans.map((l) => l.accountId), ...holdings.map((h) => h.accountId)])
+  const pickAccounts = lockLoans && lockedIds.size > 0 ? accounts.filter((a) => !lockedIds.has(a.id)) : accounts
+  const lastEntry = lastNormalEntry(lockLoans && lockedIds.size > 0 ? entries.filter((e) => !lockOf(e)) : entries, data.subscriptions) // 「前回と同じ入力」の元（定期支払いの自動記入は除く）
   const last = lastCreditId(entries)
-  const creditId = entryAccountOptions(accounts).some((a) => a.id === last) ? last : '' // 選択肢にあるときだけ使う
-  const newInitial = { date: today(), amount: '', debitId: '', creditId, memo: '', living: defaultLiving(accounts, '', creditId) }
+  const creditId = entryAccountOptions(pickAccounts).some((a) => a.id === last) ? last : '' // 選択肢にあるときだけ使う
+  const newInitial = { date: today(), amount: '', debitId: '', creditId, memo: '', living: defaultLiving(accounts, '', creditId), ...PAY_DEFAULT }
   const [quickHost, setQuickHost] = useState(null) // 見出しの右端（スマホは入力画面の上端）の、ボタンの置き場所
   const presets = data.entryPresets
   const addPreset = { list: presets, onAdd: (input) => { const p = newEntryPreset(input); update({ ...data, entryPresets: [...presets, p] }); return p.id } } // 入力欄から、今の入力をプリセットに追加
@@ -619,6 +671,8 @@ export default function Entries({ data, update, detailId = null }) { // detailId
                       onCancel: () => setEditingId(null),
                       onSave: save(e),
                       onDelete: () => remove(e),
+                      formAccounts: pickAccounts,
+                      lock: lockLoans ? lockOf(e) : undefined,
                       marked: markId === e.id,
                       markRef,
                     }
@@ -677,7 +731,7 @@ export default function Entries({ data, update, detailId = null }) { // detailId
             <h2 className="g-h">{t('entries.cardTitle')}<small lang="en">{t('entries.cardEn')}</small></h2>
             <EntryForm
               variant="card"
-              accounts={accounts}
+              accounts={pickAccounts}
               favorites={settings.favorites}
               initial={newInitial}
               lastEntry={lastEntry}
@@ -706,7 +760,7 @@ export default function Entries({ data, update, detailId = null }) { // detailId
         <div className="entries-top">
         <EntryForm
           variant={basicPc ? 'basic' : undefined}
-          accounts={accounts}
+          accounts={pickAccounts}
           favorites={settings.favorites}
           initial={newInitial}
           lastEntry={lastEntry}
@@ -745,7 +799,7 @@ export default function Entries({ data, update, detailId = null }) { // detailId
         <EntrySheet title={t('entries.newSheetTitle')} onClose={() => setCreating(false)} onOutside={outsideNew} focus={fill ? 'amount' : undefined}>
           <EntryForm
             variant="sheet"
-            accounts={accounts}
+            accounts={pickAccounts}
             favorites={settings.favorites}
             initial={sheetInitial}
             currency={settings.currency}
@@ -763,8 +817,8 @@ export default function Entries({ data, update, detailId = null }) { // detailId
         <EntrySheet nth={t('entries.sheetNth', { date: formatDayLabel(editing.date), n: editingNth })} onClose={() => setEditingId(null)} onOutside={outside}>
           <EntryForm
             variant="sheet"
-            accounts={accounts}
-            initial={{ date: editing.date, amount: String(editing.amount), debitId: editing.debitId, creditId: editing.creditId, memo: editing.memo, living: editing.living ?? null }}
+            accounts={pickAccounts}
+            initial={{ date: editing.date, amount: String(editing.amount), debitId: editing.debitId, creditId: editing.creditId, memo: editing.memo, living: editing.living ?? null, ...payInitial(editing) }}
             currentIds={[editing.debitId, editing.creditId]}
             favorites={settings.favorites}
             submitLabel={t('common.save')}

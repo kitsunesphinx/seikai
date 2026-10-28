@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { periodRows, formatYen } from '../ledgerLogic.js'
+import { periodRows, formatYen, nextDebit } from '../ledgerLogic.js'
 import { t } from '../text.js'
 import { usePhone } from '../layout.js'
 import { useGunjoPc } from '../gunjoPc.js'
@@ -10,6 +10,9 @@ import { BandStat, signedYen } from './PageBand.jsx'
 import { Icon } from './Icon.jsx'
 import { StateTag } from './FlowParts.jsx'
 import CardTimeline from './CardTimeline.jsx'
+import CardPlans from './CardPlans.jsx'
+import CardRevolving from './CardRevolving.jsx'
+import CardPayLedger from './CardPayLedger.jsx'
 import { paidInAdvance, periodStatus } from '../flowArt.js'
 import { today } from '../today.js'
 
@@ -17,7 +20,7 @@ const PERIOD_ROWS = 6 // 請求期間の表に出す行（新しい順）。残�
 const Num = ({ n }) => <span className={n < 0 ? 'neg' : ''}>{formatYen(n)}</span>
 
 // 個別ページ。card は cardReports の1枚分。表示するだけ（計算・並べ替え・判定は ledgerLogic.js）
-export default function CreditCardDetail({ card, backHref, unit }) {
+export default function CreditCardDetail({ card, backHref, unit, entries = [], data, update }) {
   const periods = periodRows(card.periods, card.lastClosing, card.payDay)
   const phone = usePhone()
   const gunjoPc = useGunjoPc()
@@ -91,16 +94,17 @@ export default function CreditCardDetail({ card, backHref, unit }) {
       </div>
     )
   }
+  const nd = basicPc || basicPhone ? nextDebit(card, now) : { amount: card.next, date: card.payDate, recordPending: false } // 基本のテーマだけ、締めた請求が残っていなければ次の引き落とし日の分
   return (
     <>
       <div className="back"><a href={backHref}>{t('card.back')}</a></div>
       {basicPc ? <div className="b-page-head"><h2>{card.account.name}{!card.account.active && <span className="note"> {t('common.inactive')}</span>}</h2><p>{t('basicPc.cardDetailLead')}</p></div> : <h2>{card.account.name}{!card.account.active && <span className="note"> {t('common.inactive')}</span>}</h2>}
-      {basicPhone && <section className="b-phone-next"><span>{t('card.next')}</span><b><Num n={card.next} />{unit}</b></section>}
+      {basicPhone && <section className="b-phone-next"><span>{t('card.next')}</span><b><Num n={nd.amount} />{unit}</b>{nd.recordPending && <small className="b-record-pending">{t('card.recordPending')}</small>}</section>}
       <div className="table-box"><table>
         <tbody>
-          {!basicPhone && <tr><td>{t('card.next')}</td><td><Num n={card.next} />{unit}</td></tr>}
+          {!basicPhone && <tr><td>{t('card.next')}</td><td><Num n={nd.amount} />{unit}</td></tr>}
           <tr><td>{t('card.unbilled')}</td><td><Num n={card.unbilled} />{unit}</td></tr>
-          {!basicPhone && <tr><td>{t('card.payDateApprox')}</td><td>{card.payDate}</td></tr>}
+          {!basicPhone && <tr><td>{t('card.payDateApprox')}</td><td>{nd.date}{nd.recordPending && <small className="b-record-pending">{t('card.recordPending')}</small>}</td></tr>}
           <tr><td>{t('card.balanceTotal')}</td><td><Num n={card.balance} />{unit}</td></tr>
           {!basicPhone && <tr><td>{t('card.closingDay')}</td><td>{t('card.everyMonthDay', { day: card.closingDay })}</td></tr>}
           {!basicPhone && <tr><td>{t('card.payDay')}</td><td>{t('card.everyMonthDay', { day: card.payDay })}</td></tr>}
@@ -109,6 +113,8 @@ export default function CreditCardDetail({ card, backHref, unit }) {
       {basicPhone ? <details className="b-phone-calcfold"><summary>{t('card.calcFold')}</summary><p className="note">{t('card.noteFormula', { date: card.lastClosing })} {t('card.noteRules')}</p></details> : <p className="note">
         {t('card.noteFormula', { date: card.lastClosing })} {t('card.noteRules')}
       </p>}
+      {(basicPc || basicPhone) && <CardPlans card={card} entries={entries} accounts={data.accounts} unit={unit} data={data} update={update} />}
+      {(basicPc || basicPhone) && data && <CardPayLedger card={card} data={data} update={update} unit={unit} readOnly={basicPhone} />}
       {basicPc ? <div className="b-section-head"><h3>{t('card.periodsTitle')}</h3></div> : <h3>{t('card.periodsTitle')}</h3>}
       {periods.length === 0 ? <p className="note">{t('card.noUsage')}</p> : phone ? (
         // スマホの幅（spec-mobile.md 第6章）：請求期間ごとに2行。1行目に締め日と利用額、2行目に引き落とし予定日と（未確定）。PC は下の表のまま
@@ -133,12 +139,13 @@ export default function CreditCardDetail({ card, backHref, unit }) {
             {periods.map((p) => (
               <tr key={p.closingDate} className={p.open ? 'open-period' : ''}>
                 <td>{p.label}{p.open && t('card.unconfirmed')}</td>
-                <td><Num n={p.amount} />{unit}{t('card.payLabelWrap', { label: p.payLabel })}</td>
+                <td><Num n={p.amount} />{unit}{t('card.payLabelWrap', { label: p.payLabel })}{basicPc && periodStatus({ open: p.open, paid: p.payDate <= now }) === 'paid' && <span className="b-pc-state paid" title={t('card.statusPaidHint')}>{t('card.statusPaid')}</span>}</td>
               </tr>
             ))}
           </tbody>
         </table></div>
       )}
+      {(basicPc || basicPhone) && data && update && <CardRevolving key={card.account.id} account={card.account} data={data} update={update} />}
     </>
   )
 }

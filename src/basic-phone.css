@@ -427,6 +427,7 @@
   :root[data-theme='basic'] .ledger .acct-detail > .fixed-flag { gap: var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-size); min-height: var(--b-phone-control); overflow-wrap: anywhere; }
   :root[data-theme='basic'] .ledger .acct-detail > .fixed-flag { min-width: var(--b-phone-control); }
   :root[data-theme='basic'] .ledger .acct-detail > .living-month select { font-size: var(--b-phone-font); }
+  :root[data-theme='basic'] .ledger .acct-detail > .usage-select .note { font-size: var(--b-font-small); }
   :root[data-theme='basic'] .ledger .acct-detail > .icon-only,
   :root[data-theme='basic'] .b-phone-skills .skill-row > .icon-only { border-color: var(--b-negative); color: var(--b-negative); background: var(--b-clear); }
 
@@ -579,7 +580,31 @@
   :root[data-theme='basic'] .b-month-redesign .b-trend-zero { stroke: var(--b-muted); stroke-dasharray: 3 4; }
   :root[data-theme='basic'] .b-month-redesign .b-trend-line { fill: none; stroke: var(--b-active-bar); stroke-width: 2; }
   :root[data-theme='basic'] .b-month-redesign .b-trend-dot { fill: var(--b-active-bar); }
+  :root[data-theme='basic'] .b-month-redesign .b-trend-grid { stroke: var(--b-side-line); }
+  :root[data-theme='basic'] .b-month-redesign .b-trend-chart .b-trend-point { fill: var(--b-text); }
+  :root[data-theme='basic'] .b-month-redesign .b-trend-zero-negative { stroke-width: 1.5; }
+  :root[data-theme='basic'] .b-month-redesign .b-living-others { margin: var(--b-space-0); color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-month-redesign .b-month-living .rows2 > li.other { color: var(--b-muted); }
+  :root[data-theme='basic'] .b-month-redesign .b-month-living .rows2 > li.total { background: var(--b-clear); font-weight: var(--b-weight-normal); border-top: 0; border-bottom: 1px solid var(--b-side-line); }
+  :root[data-theme='basic'] .b-month-redesign .b-month-living .rows2 > li.total .name { font-weight: var(--b-weight-normal); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-bars { display: grid; gap: var(--b-space-1); margin: var(--b-space-3) 0 var(--b-space-2); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-bar { display: flex; height: var(--b-space-3); background: var(--b-table-head); overflow: hidden; margin-top: var(--b-space-2); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-bar > span { display: block; height: 100%; }
+  :root[data-theme='basic'] .b-month-redesign .b-net-cash { background: var(--b-active-bar); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-saving { background: var(--b-positive); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-other { background: var(--b-line); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-borrow, :root[data-theme='basic'] .b-month-redesign .b-net-shortfall { background: var(--b-negative); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-net { background: var(--b-navy); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-labels { display: grid; column-gap: var(--b-space-3); margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-labels li { display: grid; gap: var(--b-space-0); min-width: 0; padding-top: var(--b-space-1); white-space: nowrap; }
+  :root[data-theme='basic'] .b-month-redesign .b-net-labels .nm { display: flex; align-items: center; gap: var(--b-space-1); color: var(--b-muted); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-labels strong { font-weight: var(--b-weight-normal); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-month-redesign .b-net-labels li:has(.b-net-net) strong { font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-swatch { display: inline-block; width: var(--b-space-2); height: var(--b-space-2); flex: none; }
+  :root[data-theme='basic'] .b-month-redesign .b-net-scholarship { margin: var(--b-space-2) var(--b-space-0) var(--b-space-0); font-size: var(--b-font-small); color: var(--b-muted); }
+  :root[data-theme='basic'] .b-month-redesign .b-net-with { margin: var(--b-space-0); font-size: var(--b-font-small); color: var(--b-muted); }
   :root[data-theme='basic'] .b-phone-monthly .b-trend-net { display: flex; align-items: baseline; justify-content: space-between; gap: var(--b-space-2); margin: var(--b-space-2) 0 var(--b-space-0); }
+  :root[data-theme='basic'] .b-phone-monthly .b-trend-net strong { white-space: nowrap; }
   :root[data-theme='basic'] .b-phone-monthly .b-trend-change { margin: var(--b-space-0); font-size: var(--b-font-small); }
   :root[data-theme='basic'] .b-month-redesign .b-trend-table { overflow-x: auto; }
   :root[data-theme='basic'] .b-month-redesign .b-trend-table th:not(:first-child), :root[data-theme='basic'] .b-month-redesign .b-trend-table td:not(:first-child) { text-align: right; white-space: nowrap; }
@@ -717,6 +742,7 @@
   :root[data-theme='basic'] .b-phone-loans .b-pl-tile { display: flex; flex-direction: column; gap: var(--b-space-1); min-width: 0; padding: var(--b-space-3) var(--b-space-4); border: 1px solid var(--b-line); background: var(--b-surface); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-tile .lbl { color: var(--b-muted); font-size: var(--b-font-small); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-tile strong { font-size: var(--b-font-large); font-weight: var(--b-weight-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-phone-loans [role='tabpanel'] { display: flex; flex-direction: column; gap: var(--b-space-4); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-list { display: flex; flex-direction: column; gap: var(--b-space-3); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'ic name rem' 'ic track track'; gap: var(--b-space-1) var(--b-space-3); align-items: center; box-sizing: border-box; width: 100%; min-height: var(--b-phone-control); padding: var(--b-space-3) var(--b-space-4); border: 1px solid var(--b-line); border-radius: 0; background: var(--b-surface); color: var(--b-text); font: inherit; text-align: left; }
   :root[data-theme='basic'] .b-phone-loans .b-pl-ic { grid-area: ic; display: inline-flex; align-items: center; justify-content: center; width: var(--b-phone-control); height: var(--b-phone-control); border-radius: 50%; background: var(--b-active-bg); color: var(--b-navy); }
@@ -739,6 +765,72 @@
   :root[data-theme='basic'] .b-phone-loans .b-pl-fact { display: flex; flex-direction: column; gap: var(--b-space-1); min-width: 0; padding: var(--b-space-2) var(--b-space-3); border: 1px solid var(--b-line); background: var(--b-surface); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-fact .k { color: var(--b-muted); font-size: var(--b-font-small); }
   :root[data-theme='basic'] .b-phone-loans .b-pl-fact .v { font-weight: var(--b-weight-bold); font-size: var(--b-font-label); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+  /* 投資のページ（スマホ。見るだけ）：色・罫線・余白は変数 */
+  :root[data-theme='basic'] .b-phone-invest { display: flex; flex-direction: column; gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-tiles { display: grid; grid-template-columns: 1fr; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-tile { display: flex; flex-direction: column; gap: var(--b-space-1); padding: var(--b-space-3) var(--b-space-4); border: 1px solid var(--b-line); background: var(--b-surface); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-tile .lbl, :root[data-theme='basic'] .b-phone-invest .b-loan-tile .sub { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-tile strong { color: var(--b-navy); font-size: var(--b-font-large); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-detail { display: flex; flex-direction: column; gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-dhead { display: flex; flex-direction: column; gap: var(--b-space-1); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-dhead h3 { margin: var(--b-space-0); display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-dhead h3 small { color: var(--b-muted); font-size: var(--b-font-small); font-weight: var(--b-weight-regular); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-dhead p { margin: var(--b-space-0); display: flex; gap: var(--b-space-2); align-items: baseline; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-dhead p strong { color: var(--b-navy); font-size: var(--b-font-large); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-fact { display: flex; flex-direction: column; gap: var(--b-space-1); min-width: 0; padding: var(--b-space-2) var(--b-space-3); border: 1px solid var(--b-line); background: var(--b-surface); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-fact .k { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-fact .v { font-weight: var(--b-weight-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-fact .v small { display: block; color: var(--b-muted); font-size: var(--b-font-small); font-weight: var(--b-weight-regular); }
+  :root[data-theme='basic'] .b-phone-invest .b-section-head h3 { margin: var(--b-space-0); font-size: var(--b-font-label); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-elist { margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-erow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--b-space-1) var(--b-space-3); padding: var(--b-space-2) var(--b-space-3); border-bottom: 1px solid var(--b-line); list-style: none; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-erow .d { color: var(--b-muted); font-size: var(--b-font-small); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-erow .m { grid-column: 1 / 3; color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-invest .b-loan-erow .a { grid-row: 1 / 3; grid-column: 3; align-self: center; font-weight: var(--b-weight-bold); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-invest .b-inv-quotes ul { display: flex; flex-direction: column; gap: var(--b-space-1); margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; }
+  :root[data-theme='basic'] .b-phone-invest .b-inv-quotes li { display: flex; justify-content: space-between; }
+
+  /* 投資のページ（基本のテーマ）：銘柄の一覧、今売ったら手元に残る見込み、価格の一覧。色・罫線・余白は変数 */
+  :root[data-theme='basic'] .b-inv-list { display: flex; flex-direction: column; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-inv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--b-space-1) var(--b-space-4); padding: var(--b-space-3) var(--b-space-4); border: 1px solid var(--b-line); background: var(--b-surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  :root[data-theme='basic'] .b-inv-row.current { border-color: var(--b-navy); box-shadow: inset 3px 0 0 var(--b-navy); }
+  :root[data-theme='basic'] .b-inv-row .nm { font-weight: var(--b-weight-bold); overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-inv-row .v { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-inv-row .sub { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-inv-row .sub.g { text-align: right; font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-inv-row .tag, :root[data-theme='basic'] .b-inv-detail .tag { margin-left: var(--b-space-2); border: 1px solid var(--b-navy); padding: 0 var(--b-space-2); color: var(--b-navy); font-size: var(--b-font-small); font-weight: var(--b-weight-regular); }
+  :root[data-theme='basic'] .b-inv-after { display: flex; flex-direction: column; gap: var(--b-space-1); padding: var(--b-space-4) var(--b-space-5); border: 1px solid var(--b-navy); background: var(--b-total-bg); }
+  :root[data-theme='basic'] .b-inv-after h4 { margin: var(--b-space-0); color: var(--b-muted); font-size: var(--b-font-label); font-weight: var(--b-weight-regular); }
+  :root[data-theme='basic'] .b-inv-after .big { margin: var(--b-space-0); color: var(--b-navy); font-size: var(--b-font-large); font-weight: var(--b-weight-bold); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-inv-after .calc { margin: var(--b-space-0); color: var(--b-muted); font-size: var(--b-font-small); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-inv-quotes h4 { margin: var(--b-space-0) var(--b-space-0) var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-label); }
+  :root[data-theme='basic'] .b-inv-quotes ul { display: flex; flex-wrap: wrap; gap: var(--b-space-2) var(--b-space-5); margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-inv-quotes li { display: flex; align-items: center; gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-check { display: flex; align-items: center; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-inv-buy .m { color: var(--b-muted); }
+
+  /* クレカ個別ページ：このカードの分割・リボの仕訳（買い物・引き落とし）。色・罫線・余白は変数 */
+  :root[data-theme='basic'] .b-pay-ledger h4 { margin: var(--b-space-4) var(--b-space-0) var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-label); }
+  :root[data-theme='basic'] .b-pay-list { margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; }
+  :root[data-theme='basic'] .b-pay-row { border-bottom: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-pay-row.open { background: var(--b-total-bg); }
+  :root[data-theme='basic'] .b-pay-row .r1 { display: flex; align-items: baseline; gap: var(--b-space-4); padding: var(--b-space-2) var(--b-space-4); }
+  :root[data-theme='basic'] .b-pay-row .d { color: var(--b-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :root[data-theme='basic'] .b-pay-row .nm { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-pay-row .tag { margin-left: var(--b-space-2); border: 1px solid var(--b-line); padding: 0 var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-pay-row .a { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :root[data-theme='basic'] .b-pay-row .r2 { margin: var(--b-space-0); padding: var(--b-space-0) var(--b-space-4) var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-pay-row .edit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: calc((1em - 44px) / 2) var(--b-space-0); padding: var(--b-space-0); border: 0; background: none; color: var(--b-navy); cursor: pointer; font: inherit; font-size: var(--b-font-small); white-space: nowrap; }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-ledger { display: flex; flex-direction: column; gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-elist { display: flex; flex-direction: column; margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-erow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--b-space-1) var(--b-space-3); padding: var(--b-space-2) var(--b-space-3); border-bottom: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-erow .d { color: var(--b-muted); font-size: var(--b-font-small); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-erow .k { font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-erow .m { grid-column: 1 / 3; color: var(--b-muted); font-size: var(--b-font-small); overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-phone-loans .b-loan-erow .a { grid-row: 1 / 3; grid-column: 3; align-self: center; font-weight: var(--b-weight-bold); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-phone-entries .b-loan-link { color: var(--b-navy); font-size: var(--b-font-small); text-decoration: underline; }
   :root[data-theme='basic'] .b-phone-loans .b-pl-fact .v small { display: block; color: var(--b-muted); font-size: var(--b-font-small); font-weight: var(--b-weight-normal); }
   :root[data-theme='basic'] .b-phone-loans .b-loan-chart { width: 100%; }
   :root[data-theme='basic'] .b-phone-loans .b-loan-chart svg { display: block; }
@@ -748,4 +840,115 @@
   :root[data-theme='basic'] .b-phone-loans .b-loan-zero { stroke: var(--b-muted); stroke-dasharray: 4 4; }
   :root[data-theme='basic'] .b-phone-loans .b-loan-line { fill: none; stroke: var(--b-navy); stroke-width: 2.5; }
   :root[data-theme='basic'] .b-phone-loans .b-loan-dot { fill: var(--b-navy); }
+
+  /* 仕訳の入力：支払い方法（貸方がクレカのときだけ。押せる場所は 44px 以上）と、一覧の小さい印 */
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-fields { display: flex; flex-direction: column; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-label { color: var(--b-muted); font-size: var(--b-font-size); font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-counts,
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-detail { display: flex; flex-wrap: wrap; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-detail { flex-direction: column; }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-mode,
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-count { box-sizing: border-box; min-width: var(--b-phone-control); min-height: var(--b-phone-control); border: 1px solid var(--b-line); border-radius: 0; background: var(--b-surface); color: var(--b-text); font: inherit; }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-mode[aria-pressed='true'],
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-count[aria-pressed='true'] { background: var(--b-navy); border-color: var(--b-navy); color: var(--b-surface); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-mode:disabled { color: var(--b-muted); border-style: dashed; }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-count-input { box-sizing: border-box; width: calc(var(--b-phone-control) * 1.4); min-height: var(--b-phone-control); text-align: right; font-size: var(--b-phone-font); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-rate { display: flex; flex-direction: column; gap: var(--b-space-1); color: var(--b-muted); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-rate input { box-sizing: border-box; width: 100%; min-height: var(--b-phone-control); font-size: var(--b-phone-font); }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-hint { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-entries .pay-mark { display: inline-block; margin-left: var(--b-space-2); padding: var(--b-space-0) var(--b-space-2); border: 1px solid var(--b-line); color: var(--b-muted); font-size: var(--b-font-small); white-space: nowrap; }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-counts { flex-wrap: nowrap; }
+  :root[data-theme='basic'] .b-phone-entries .sheet .pay-other-input { display: flex; align-items: center; gap: var(--b-space-2); color: var(--b-muted); }
+
+  /* クレカの個別ページ：まだ払っていない分・リボの設定（押せる場所は 44px 以上）。一覧の「先の分」。元帳の印 */
+  :root[data-theme='basic'] .b-phone-card-detail .card-plans,
+  :root[data-theme='basic'] .b-phone-card-detail .card-revolving { margin-bottom: var(--b-space-5); }
+  :root[data-theme='basic'] .b-phone-card-detail .card-revolving form { display: flex; flex-direction: column; gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-phone-card-detail .card-revolving .field { display: flex; flex-direction: column; gap: var(--b-space-1); color: var(--b-muted); }
+  :root[data-theme='basic'] .b-phone-card-detail .card-revolving input { box-sizing: border-box; width: 100%; min-height: var(--b-phone-control); font-size: var(--b-phone-font); }
+  :root[data-theme='basic'] .b-phone-card-detail .card-revolving button { box-sizing: border-box; min-height: var(--b-phone-action); }
+  :root[data-theme='basic'] .b-phone-cards .b-card-later { display: block; color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-card-detail .pay-mark,
+  :root[data-theme='basic'] .b-phone-book .pay-mark { display: inline-block; margin-left: var(--b-space-2); padding: var(--b-space-0) var(--b-space-2); border: 1px solid var(--b-line); color: var(--b-muted); font-size: var(--b-font-small); white-space: nowrap; }
+
+  /* 借入のページの別枠（スマホ）：まだ払っていない分。初めは畳む。開閉の印は右端の矢印（開くと回る） */
+  :root[data-theme='basic'] .b-phone-loans .b-pl-unpaid-sub { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-loans .b-unpaid-plans { margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-phone-loans .b-unpaid-plans li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--b-space-1) var(--b-space-2); padding: var(--b-space-1) var(--b-space-0); border-top: 0; }
+  :root[data-theme='basic'] .b-phone-loans .b-unpaid-plans b { margin-left: auto; color: var(--b-text); }
+  :root[data-theme='basic'] .b-plan { display: grid; gap: var(--b-space-5); margin-top: var(--b-space-3); }
+  :root[data-theme='basic'] .b-plan-tiles { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: var(--b-space-4); }
+  :root[data-theme='basic'] .b-plan-tile { display: grid; align-content: start; gap: var(--b-space-1); border: 1px solid var(--b-side-line); padding: var(--b-space-4) var(--b-space-5); background: var(--b-surface); }
+  :root[data-theme='basic'] .b-plan-tile .lbl { color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-plan-nexttile { background: var(--b-active-bg); border-color: var(--b-active-bar); }
+  :root[data-theme='basic'] .b-record-pending { display: block; color: var(--b-muted); font-size: var(--b-font-small); font-weight: var(--b-weight-normal); }
+  :root[data-theme='basic'] .b-plan-big { font-size: var(--b-font-heading); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-plan-mid { font-size: var(--b-font-large); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-plan-band { display: flex; gap: var(--b-space-0); height: var(--b-space-3); margin-top: var(--b-space-1); background: var(--b-table-head); }
+  :root[data-theme='basic'] .b-plan-band > span { display: block; height: 100%; }
+  :root[data-theme='basic'] .b-plan-split { background: var(--b-active-bar); }
+  :root[data-theme='basic'] .b-plan-revo { background: var(--b-positive); }
+  :root[data-theme='basic'] .b-plan-legend { display: flex; flex-wrap: wrap; gap: var(--b-space-1) var(--b-space-4); margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; font-size: var(--b-font-small); color: var(--b-muted); }
+  :root[data-theme='basic'] .b-plan-legend li { display: flex; align-items: center; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-plan-legend strong { color: var(--b-text); font-weight: var(--b-weight-normal); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-plan-swatch { display: inline-block; width: var(--b-space-3); height: var(--b-space-3); flex: none; }
+  :root[data-theme='basic'] .b-plan-cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: var(--b-space-6); align-items: start; }
+  :root[data-theme='basic'] .b-plan-box { display: grid; gap: var(--b-space-3); min-width: 0; }
+  :root[data-theme='basic'] .b-plan-box h4 { margin: var(--b-space-0); font-size: var(--b-font-size); }
+  :root[data-theme='basic'] .b-plan-chart { display: flex; align-items: flex-end; gap: var(--b-space-2); height: 200px; border-bottom: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-plan-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; opacity: 0.55; font-size: var(--b-font-small); font-variant-numeric: tabular-nums; text-align: center; }
+  :root[data-theme='basic'] .b-plan-col.dark { opacity: 1; font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-plan-col .v { overflow: hidden; text-overflow: clip; white-space: nowrap; }
+  :root[data-theme='basic'] .b-plan-stack { display: flex; flex-direction: column; min-height: 2px; }
+  :root[data-theme='basic'] .b-plan-stack > span { display: block; }
+  :root[data-theme='basic'] .b-plan-col .m { margin-top: var(--b-space-1); }
+  :root[data-theme='basic'] .b-plan-items { display: grid; gap: var(--b-space-3); margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; }
+  :root[data-theme='basic'] .b-plan-item { display: grid; gap: var(--b-space-2); border: 1px solid var(--b-side-line); padding: var(--b-space-3) var(--b-space-4); background: var(--b-surface); }
+  :root[data-theme='basic'] .b-plan-item .r1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-plan-item .nm { font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-plan-item .tag { border: 1px solid var(--b-line); padding: 0 var(--b-space-2); color: var(--b-muted); font-size: var(--b-font-small); }
+  :root[data-theme='basic'] .b-plan-item .tag.memo { border-style: dashed; }
+  :root[data-theme='basic'] .b-plan-item .rem { margin-left: auto; font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-plan-item .pips { display: flex; gap: var(--b-space-1); }
+  :root[data-theme='basic'] .b-plan-item .pips i { flex: 1; height: var(--b-space-3); background: var(--b-table-head); }
+  :root[data-theme='basic'] .b-plan-item .pips i.done { background: var(--b-active-bar); }
+  :root[data-theme='basic'] .b-plan-item .pips i.next { background: var(--b-active-bar); opacity: 0.45; }
+  :root[data-theme='basic'] .b-plan-item .r3 { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--b-space-1) var(--b-space-4); color: var(--b-muted); font-size: var(--b-font-small); font-variant-numeric: tabular-nums; }
+  :root[data-theme='basic'] .b-plan-item .r3 b { color: var(--b-text); }
+  :root[data-theme='basic'] .b-phone-loans .tabs { display: flex; margin: var(--b-space-0) var(--b-space-0) var(--b-space-3); }
+  :root[data-theme='basic'] .b-phone-loans .tabs .tab { flex: 1; font-size: var(--b-font-size); }
+  :root[data-theme='basic'] .b-phone-loans .tabs .tab[aria-selected='true'] { color: var(--b-active-bar); font-weight: var(--b-weight-bold); border-bottom: 3px solid var(--b-active-bar); }
+  :root[data-theme='basic'] .b-plan-phone { display: grid; gap: var(--b-space-4); margin-top: var(--b-space-3); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--b-space-3); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-tile { padding: var(--b-space-3) var(--b-space-4); min-width: 0; }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-tile:first-child { grid-column: 1 / -1; }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-tile .lbl { display: flex; align-items: center; gap: var(--b-space-2); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-tile .lbl .icon { width: var(--b-font-large); height: var(--b-font-large); flex: none; }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-mid { font-size: var(--b-font-heading); overflow-wrap: anywhere; }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-cols { grid-template-columns: minmax(0, 1fr); gap: var(--b-space-4); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-chart { height: 140px; gap: var(--b-space-1); }
+  :root[data-theme='basic'] .b-plan-phone .tabs { display: flex; margin: var(--b-space-0); }
+  :root[data-theme='basic'] .b-plan-phone .tabs .tab { flex: 1; font-size: var(--b-font-size); }
+  :root[data-theme='basic'] .b-plan-phone .tabs .tab[aria-selected='true'] { color: var(--b-active-bar); font-weight: var(--b-weight-bold); border-bottom: 3px solid var(--b-active-bar); }
+  :root[data-theme='basic'] .b-plan-fold { border: 1px solid var(--b-line); background: var(--b-surface); }
+  :root[data-theme='basic'] .b-plan-fold > summary { display: flex; align-items: center; gap: var(--b-space-3); box-sizing: border-box; min-height: var(--b-phone-control); padding: var(--b-space-0) var(--b-space-4); cursor: pointer; list-style: none; font-weight: var(--b-weight-bold); }
+  :root[data-theme='basic'] .b-plan-fold > summary::-webkit-details-marker { display: none; }
+  :root[data-theme='basic'] .b-plan-fold > summary > span { flex: 1 1 auto; }
+  :root[data-theme='basic'] .b-plan-fold > summary .icon { width: var(--b-font-large); height: var(--b-font-large); flex: none; color: var(--b-muted); transition: transform 0.15s; }
+  :root[data-theme='basic'] .b-plan-fold[open] > summary .icon { transform: rotate(180deg); }
+  :root[data-theme='basic'] .b-plan-fold .b-plan-items { padding: var(--b-space-3); border-top: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-item { padding: var(--b-space-3); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-item .ic { display: inline-flex; align-self: center; color: var(--b-muted); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-item .ic .icon { width: var(--b-font-large); height: var(--b-font-large); }
+  :root[data-theme='basic'] .b-plan-phone .b-plan-item .r3 { flex-direction: column; justify-content: flex-start; font-size: var(--b-font-size); }
+  :root[data-theme='basic'] .b-phone-loans .b-pl-cards { margin: var(--b-space-0); padding: var(--b-space-0); list-style: none; border-top: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-phone-loans .b-pl-cards li { display: flex; flex-direction: column; gap: var(--b-space-1); padding: var(--b-space-1) var(--b-space-0) var(--b-space-3); border-bottom: 1px solid var(--b-line); }
+  :root[data-theme='basic'] .b-phone-loans .b-pl-cards li > a { display: flex; align-items: center; justify-content: space-between; gap: var(--b-space-3); min-height: var(--b-phone-control); color: var(--b-navy); font-weight: var(--b-weight-bold); text-decoration: none; }
+  :root[data-theme='basic'] .b-phone-loans .pay-mark { padding: var(--b-space-0) var(--b-space-2); border: 1px solid var(--b-line); white-space: nowrap; }
+  /* クレカの個別ページ（スマホ）：先の請求の予定は、初めは畳む（開閉の印つき） */
+  :root[data-theme='basic'] .b-phone-loans .b-unpaid-plans li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--b-space-1) var(--b-space-3); align-items: baseline; }
+  :root[data-theme='basic'] .b-phone-loans .b-up-name { display: flex; align-items: baseline; gap: var(--b-space-2); min-width: 0; }
+  :root[data-theme='basic'] .b-phone-loans .b-up-line { grid-column: 1 / -1; grid-row: 2; }
+  :root[data-theme='basic'] .b-phone-loans .b-unpaid-plans b { grid-column: 2; grid-row: 1; margin-left: 0; text-align: right; }
 }
