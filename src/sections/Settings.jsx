@@ -6,7 +6,8 @@ import SaveSettings from './SaveSettings.jsx'
 import DriveSettings from './DriveSettings.jsx'
 import DriveBackups from './DriveBackups.jsx'
 import DisplaySettings from './DisplaySettings.jsx'
-import { t, LANGUAGES } from '../text.js'
+import PresetSettings from './PresetSettings.jsx'
+import { t, LANGUAGES, dictionaries } from '../text.js'
 import { useConfirm } from './ConfirmDialog.jsx'
 import { BALANCE_VIEWS, BALANCE_VIEW_LABELS, loadBalanceView, rememberBalanceView } from '../storage.js'
 import {
@@ -14,11 +15,14 @@ import {
   validateFavoriteLimit, setFavoriteLimit, CURRENCIES, setCurrency, renameRows, applyRenames,
 } from '../ledgerLogic.js'
 import { today } from '../today.js'
-import { OPEN_MODES, OPEN_MODE_LABELS, loadOpenMode, rememberOpenMode } from '../entryView.js'
+import MonthRoad from './MonthRoad.jsx'
+import { OPEN_MODES, OPEN_MODE_LABELS, loadOpenMode, rememberOpenMode, NO_SPEND_SHAPES, NO_SPEND_SHAPE_LABELS, loadNoSpendShape, rememberNoSpendShape, TENS_BULLETS, TENS_BULLET_LABELS, loadTensBullet, rememberTensBullet, formatDayHead } from '../entryView.js'
 import { SETTINGS_GROUPS, SETTINGS_SECTIONS, tabDomId, panelDomId } from '../settingsSections.js'
 import Tabs from './Tabs.jsx'
 import { versionLabel, BUILT_AT, CURRENT_BUILD } from '../pwa.js'
 import { usePhone } from '../layout.js'
+import { useGunjoPc } from '../gunjoPc.js'
+import { useBasicPc } from '../basicPc.js'
 import { Icon, IconButton } from './Icon.jsx'
 
 const SIDE_KEYS = { debit: 'common.debit', credit: 'common.credit' } // 借方・貸方の名前（辞書のキー）
@@ -76,6 +80,73 @@ function OpenModeSelect({ side, label }) {
           {OPEN_MODES.map((m) => <option key={m} value={m}>{t(OPEN_MODE_LABELS[m])}</option>)}
         </select>
       </label>
+    </div>
+  )
+}
+
+// 展開したグループの、日の枠の頭の記号（基本・商人・スマホの幅。群青の PC は出さないので、設定も出さない）。ブラウザごとに覚える（保存データには入れない）
+// 選択欄の右に、実際の日の枠と同じ作り（entries.css の記号の規則）で例を出す。読み上げは飛ばす
+function TensBulletSelect() {
+  const [value, setValue] = useState(loadTensBullet)
+  const change = (next) => {
+    rememberTensBullet(next)
+    setValue(next)
+  }
+  return (
+    <div className="bullet-set">
+      <div className="bullet-set-main">
+        <label className="open-mode">
+          {t('bullet.label')}{' '}
+          <select value={value} onChange={(e) => change(e.target.value)}>
+            {TENS_BULLETS.map((v) => <option key={v} value={v}>{t(TENS_BULLET_LABELS[v])}</option>)}
+          </select>
+        </label>
+        <p className="note">{t('bullet.note')}</p>
+      </div>
+      <div className="bullet-ex-wrap" aria-hidden="true">
+        <p className="bullet-ex-cap">{t('bullet.exampleLabel')}</p>
+        <div className="bullet-ex" data-bullet={value}>
+          {['2026-10-11', '2026-10-12', '2026-10-13'].map((d) => (
+            <section key={d} className="day"><h3><span className="day-toggle"><span>{formatDayHead(d, 1)}</span></span></h3></section>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 月の道の「使っていない日」の、下線の上に重ねる図形（群青の PC だけ。見本 design-ref/gunjo-pc/E-road-nouse.html）。ブラウザごとに覚える（保存データには入れない）。変えたらすぐ覚える
+// 選択欄の右に、実際の月の道と同じ部品（MonthRoad）で、見え方の例を出す（選ぶと変わる。仮のデータの 7 日。読み上げは飛ばす）
+const EXAMPLE_DAYS = [ // 22〜28 日。1 日目は入力なし、2 日目と 6 日目は光、4 日目は仕訳のみ、3・5・7 日目（今日）は使っていない日
+  { day: 22, state: 'blank', count: 0, amount: 0, variableAmount: 0, fixedAmount: 0 },
+  { day: 23, state: 'day', count: 1, amount: 900, variableAmount: 900, fixedAmount: 0 },
+  { day: 24, state: 'blank', count: 0, amount: 0, variableAmount: 0, fixedAmount: 0, noSpend: true },
+  { day: 25, state: 'day', count: 1, amount: 0, variableAmount: 0, fixedAmount: 0 },
+  { day: 26, state: 'blank', count: 0, amount: 0, variableAmount: 0, fixedAmount: 0, noSpend: true },
+  { day: 27, state: 'day', count: 1, amount: 2400, variableAmount: 2400, fixedAmount: 0 },
+  { day: 28, state: 'blank', count: 0, amount: 0, variableAmount: 0, fixedAmount: 0, noSpend: true, isToday: true },
+]
+function NoSpendShapeSelect({ currency }) {
+  const [value, setValue] = useState(loadNoSpendShape)
+  const change = (next) => {
+    rememberNoSpendShape(next)
+    setValue(next)
+  }
+  return (
+    <div className="g-nospend-set">
+      <div className="g-nospend-set-main">
+        <label className="open-mode">
+          {t('nospend.shapeLabel')}{' '}
+          <select value={value} onChange={(e) => change(e.target.value)}>
+            {NO_SPEND_SHAPES.map((v) => <option key={v} value={v}>{t(NO_SPEND_SHAPE_LABELS[v])}</option>)}
+          </select>
+        </label>
+        <p className="note">{t('nospend.shapeNote')}</p>
+      </div>
+      <div className="g-nospend-ex-wrap" aria-hidden="true">
+        <p className="g-nospend-ex-cap">{t('nospend.exampleLabel')}</p>
+        <div className="g-nospend-ex"><MonthRoad road={{ month: '2000-01', days: EXAMPLE_DAYS }} currency={currency} shape={value} /></div>
+      </div>
     </div>
   )
 }
@@ -160,11 +231,12 @@ function FavoriteSide({ side, data, update }) {
 
 // 「よく使う」：今月・前月・前々月の通常の仕訳から、借方・貸方別々に上位5件（回数つき）。登録の手がかり（選択肢には出さない）
 function Frequent({ data }) {
+  const gunjoPc = useGunjoPc()
   const { accounts, entries, settings } = data
   const stats = favoriteStats(entries, accounts, today())
   return (
     <section>
-      <h4 className="sub-title">{t('settings.frequentTitle')}</h4>
+      <h4 className={gunjoPc ? 'sub-title g-sec' : 'sub-title'}>{t('settings.frequentTitle')}{gunjoPc && <small lang="en">{t('settings.frequentEn')}</small>}</h4>
       <div className="columns">
         {['debit', 'credit'].map((side) => (
           <div key={side}>
@@ -213,12 +285,14 @@ export default function Settings({ driveSync, data, update, openPanel, replaceDa
     update({ ...data, settings: setCurrency(data.settings, next) })
   }
   const phone = usePhone()
+  const gunjoPc = useGunjoPc()
+  const basicPc = useBasicPc()
 
   // 項目の中身（id → 中身）。並びと見出しは settingsSections.js。項目を足すときは、そちらと、ここの両方に足す（settingsSections.check.js が合っているか見る）
   const BODIES = {
     language: () => (
       <select aria-label={t('language.title')} value={language} onChange={(e) => changeLanguage(e.target.value)}>
-        {LANGUAGES.map((code) => <option key={code} value={code}>{t(LANGUAGE_KEYS[code])}</option>)}
+        {LANGUAGES.map((code) => <option key={code} value={code}>{LANGUAGE_KEYS[code] ? t(LANGUAGE_KEYS[code]) : dictionaries[code]['language.' + code]}</option>)}
       </select>
     ),
     currency: () => (
@@ -236,16 +310,33 @@ export default function Settings({ driveSync, data, update, openPanel, replaceDa
       <>
         <OpenModeSelect side="phone" label={t('entries.openModePhone')} />
         <OpenModeSelect side="pc" label={t('entries.openModePc')} />
+        {gunjoPc && <NoSpendShapeSelect currency={data.settings.currency} />}
+        {!gunjoPc && <TensBulletSelect />}
       </>
     ),
     favorites: () => (
       <>
         <p className="note">{t('settings.favoritesNote')}</p>
-        <FavoriteSide side="debit" data={data} update={update} />
-        <FavoriteSide side="credit" data={data} update={update} />
+        {gunjoPc ? (
+          <div className="g-fav-cols">
+            <FavoriteSide side="debit" data={data} update={update} />
+            <FavoriteSide side="credit" data={data} update={update} />
+          </div>
+        ) : basicPc ? (
+          <div className="b-fav-cols">
+            <FavoriteSide side="debit" data={data} update={update} />
+            <FavoriteSide side="credit" data={data} update={update} />
+          </div>
+        ) : (
+          <>
+            <FavoriteSide side="debit" data={data} update={update} />
+            <FavoriteSide side="credit" data={data} update={update} />
+          </>
+        )}
         <Frequent data={data} />
       </>
     ),
+    presets: () => <PresetSettings data={data} update={update} />,
     card: () => <CardSettings data={data} update={update} />,
     save: () => <SaveSettings autosave={autosave} />,
     drive: () => <DriveSettings tab={tab} />,
@@ -261,12 +352,27 @@ export default function Settings({ driveSync, data, update, openPanel, replaceDa
   // 見た目は、クラス（set-title・sub-title・sub-sub）で決める（タグの大きさに頼らない）
   const items = SETTINGS_SECTIONS.filter((s) => s.group === tab && (phone || !s.phoneOnly)) // スマホの形だけの項目（書き出し・読み込み）は、PC では出さない
   return (
-    <div className="settings">
-      <h2>{t('settings.title')}</h2>
+    <div className={basicPc ? 'settings b-page b-settings' : 'settings'}>
+      {basicPc ? (
+        <div className="b-page-head"><h2>{t('settings.title')}</h2><p>{t('basicPc.settingsLead')}</p></div>
+      ) : !gunjoPc && <h2>{t('settings.title')}</h2>}
       <Tabs label={t('settings.title')} tabs={SETTINGS_GROUPS.map((g) => ({ id: g.id, title: t(g.title) }))} current={tab} onChange={onTab} prefix="settings" />
       <div role="tabpanel" id={panelDomId(tab)} aria-labelledby={tabDomId(tab)} className="set-panel">
-        {items.map(({ id, title, danger }) => {
-          const item = <><h3 className="set-title">{t(title)}</h3>{BODIES[id]()}</>
+        {items.map(({ id, title, en, danger }) => {
+          if (basicPc && tab === 'general') {
+            return (
+              <div key={id} className="b-setting-row">
+                <h3 className="set-title">{t(title)}</h3>
+                <div className="b-setting-control">
+                  {id === 'language' && <p>{t('basicPc.languageLabel')}</p>}
+                  {id === 'currency' && <p>{t('basicPc.currencyLabel')}</p>}
+                  {BODIES[id]()}
+                  {id === 'display' && <p className="note">{t('basicPc.deviceThemeNote')}</p>}
+                </div>
+              </div>
+            )
+          }
+          const item = <>{basicPc ? <div className="b-section-head"><h3 className="set-title">{t(title)}</h3></div> : <h3 className="set-title">{t(title)}{gunjoPc && <small lang="en">{t(en)}</small>}</h3>}{BODIES[id]()}</>
           // 危ない操作（仕訳の一括削除・全体の初期化）は、エラーの色の枠で囲む（ボタンの動き・確認画面は変えない）。ほかの項目は、枠も囲みも足さない
           return danger ? <div key={id} className="set-danger">{item}</div> : <Fragment key={id}>{item}</Fragment>
         })}

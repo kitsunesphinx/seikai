@@ -1,6 +1,10 @@
 .entries { font-size: var(--font-size); color: var(--color-text); --cols: 2.5em 9em 9em 6em 1fr 9em; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; } /* 読み上げだけ（交換ボタンの結果） */
 .entries form { display: flex; gap: var(--space); flex-wrap: wrap; align-items: center; margin-bottom: var(--space); }
 .entries .error { color: var(--color-error); }
+/* 入力欄の固定（PC の幅）：入力の行は、一覧をスクロールしても画面の上に貼り付く（地は各見た目の --color-bg の無地）。スマホの形は、この行を出さず、右下の「＋」ボタン（下の @media）。電卓の帯などは、行の中なので、行と一緒に一覧の上の層に出る */
+.entries > .entries-top { position: sticky; top: 0; z-index: 5; background: var(--color-bg); padding: var(--space) 0; margin: 0; border-bottom: 1px solid var(--color-border); } /* 入力の行と、その下のボタンの行（前回と同じ入力など）を、一緒に貼り付ける */
+.entries-top > form { margin: 0; }
 .entries .field { display: contents; } /* PC：入力欄のラベル（Field）は箱も文字も出さない */
 .entries .field-label { display: none; }
 
@@ -23,6 +27,41 @@
 .entries .day-toggle .mark { margin-left: auto; font-size: 0.8em; font-weight: normal; }
 .entries .day li { border: 0; border-bottom: 1px solid var(--color-border); margin-bottom: 0; }
 .entries .day li:last-child { border-bottom: 0; }
+
+/* 10 件ずつのグループの見出し（⑨。10 件を超える月だけ）：日付の範囲・件数・費用の合計・最高額。押すとグループを開閉する。折り返してよい。
+   枠は日の枠（.day）と同じ：1px の線・左右の余白。文字の左位置も同じ（線 1px ＋ 余白）。開いているときは、文字を太く・線を少し濃くして日の枠と見分ける */
+.entries .tens { margin-top: var(--space); }
+.entries .tens > h3 { margin: 0; font-size: var(--font-size); }
+.entries .tens-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space); width: 100%; box-sizing: border-box; min-height: 44px; padding: 4px var(--space); border: 1px solid var(--color-border); border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* 開いているとき（案 A）：見出しは範囲と件数だけの細い 1 行の帯（費用・最高額は閉じているときだけ）。グループ全体の左に縦線を通し、日の枠は内側へ寄せて一段小さくする */
+:root:root .entries .tens-toggle[aria-expanded='true'] { min-height: 30px; padding: 2px var(--space); gap: 0 var(--space); font-size: 0.85em; background: color-mix(in srgb, var(--color-accent) 10%, transparent); border-color: transparent; }
+.entries .tens-toggle[aria-expanded='true'] .tens-sum { display: none; }
+.entries .tens:has(> h3 > .tens-toggle[aria-expanded='true']) { border-left: 3px solid var(--color-accent); margin-top: 16px; }
+.entries .tens > div { padding-left: 10px; }
+.entries .tens > div > .day .day-toggle { height: 36px; font-size: 0.92em; } /* .day だけ（群青 PC の .g-daybox の見出しは中身が高いので掛けない） */
+.entries .tens-toggle .tens-range { font-weight: bold; }
+.entries .tens-toggle .mark { margin-left: auto; font-size: 0.8em; font-weight: normal; }
+
+/* 展開したグループの中の、日の枠の頭の記号（⑨。設定 → 仕訳。基本・商人・スマホの幅。群青の PC は .g-daybox で .day を使わないので出ない）。
+   記号は全部 CSS の描画（書体に字がなくてよい）。読み上げは、中身が空の図形か、content の「/ ""」（代替文字なし）で、読ませない。
+   色はアクセント色：PC の仕訳の行の番号（「1.」。ふつうの文字色）と見分ける。数字・丸数字はグループごとに 1 から（counter） */
+:is(.entries .tens > div, .bullet-ex) { counter-reset: dayno; }
+:is(.entries .tens > div, .bullet-ex) > .day { counter-increment: dayno; }
+:is(.tens, .bullet-ex):not([data-bullet='none']) .day-toggle > span:first-child::before { content: ''; display: inline-block; flex: none; vertical-align: middle; box-sizing: border-box; margin-right: 0.55em; color: var(--color-accent); }
+:is(.tens, .bullet-ex)[data-bullet='dot'] .day-toggle > span:first-child::before { width: 0.35em; height: 0.35em; border-radius: 50%; background: currentColor; }
+:is(.tens, .bullet-ex)[data-bullet='disc'] .day-toggle > span:first-child::before { width: 0.6em; height: 0.6em; border-radius: 50%; background: currentColor; }
+:is(.tens, .bullet-ex)[data-bullet='dash'] .day-toggle > span:first-child::before { width: 0.85em; height: 2px; background: currentColor; }
+:is(.tens, .bullet-ex)[data-bullet='num'] .day-toggle > span:first-child::before { content: counter(dayno) '.' / ''; min-width: 1.3em; margin-right: 0.4em; font-weight: bold; font-variant-numeric: tabular-nums; }
+:is(.tens, .bullet-ex)[data-bullet='circ'] .day-toggle > span:first-child::before { content: counter(dayno) / ''; display: inline-flex; align-items: center; justify-content: center; width: 1.45em; height: 1.45em; border: 1px solid currentColor; border-radius: 50%; font-size: 0.78em; line-height: 1; margin-right: 0.6em; font-weight: bold; }
+:is(.tens, .bullet-ex)[data-bullet='gt'] .day-toggle > span:first-child::before { width: 0.42em; height: 0.42em; border-top: 2px solid currentColor; border-right: 2px solid currentColor; transform: rotate(45deg); margin-right: 0.75em; }
+/* 設定の例：日の枠を 3 つ縮めて並べる */
+.bullet-set { display: flex; flex-wrap: wrap; gap: var(--space); align-items: flex-start; }
+.bullet-set-main { flex: 1 1 18em; min-width: 0; }
+.bullet-ex-wrap { flex: 0 1 16em; min-width: 0; }
+.bullet-ex-cap { margin: 0 0 4px; color: var(--color-muted); font-size: 0.85em; }
+.bullet-ex .day { margin: 0 0 4px; border: 1px solid var(--color-border); padding: 0; }
+.bullet-ex .day h3 { margin: 0; font-size: var(--font-size); }
+.bullet-ex .day-toggle { display: flex; align-items: center; min-height: 32px; padding: 0 var(--space); font-weight: bold; }
 
 /* 列をそろえた一覧。見出しと全行が同じ --cols を使う */
 .entries .head, .entries .day li.row { display: grid; grid-template-columns: var(--cols); column-gap: var(--space); align-items: center; }
@@ -77,4 +116,55 @@
   .sheet-actions { display: flex; gap: var(--space); margin-top: 4px; }
   .entries .sheet-actions button { flex: 1; min-width: 0; min-height: 48px; white-space: nowrap; } /* :root の高さ 44px の規則（index.css）より先に効かせる */
   .entries .sheet-actions .primary { border: 0; background: var(--color-accent); color: var(--color-on-accent); }
+
+  /* 右下の「＋」ボタン（入力欄の固定。スマホの形）：押すと、新しい仕訳の入力画面（編集画面と同じ形）が下から開く。メニュー（z-index 10〜11）より下、入力画面（20）より下。一覧の最後の行がボタンに隠れないよう、下に余白 */
+  .entries { padding-bottom: 88px; }
+  .entry-fab { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 8; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 56px; height: 56px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: var(--color-accent); color: var(--color-on-accent); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35); cursor: pointer; }
+  .entry-fab .icon { width: 26px; height: 26px; }
+
+  /* 「＋」メニュー（⑮）：押すと「＋」の上に縦に出る。幕（タップで閉じる）→ メニュー → 「＋」（×）の順に重ねる（z-index は同じ 8、あとの要素が上）。色は変数だけ */
+  .plus-layer { display: contents; }
+  .plus-scrim { position: fixed; inset: 0; z-index: 8; background: var(--color-backdrop); }
+  .plus-menu { position: fixed; right: 16px; bottom: calc(16px + 56px + 12px + env(safe-area-inset-bottom)); z-index: 8; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .plus-item { display: flex; align-items: center; gap: 10px; box-sizing: border-box; min-height: 48px; padding: 0 18px 0 14px; border: 1px solid var(--color-field-border, var(--color-text)); background: var(--color-bg); color: var(--color-text); font: inherit; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); cursor: pointer; }
+  .plus-item .icon { width: 22px; height: 22px; flex: none; }
+  .plus-item[aria-disabled='true'] { opacity: 0.5; cursor: default; }
+
+  /* 「使っていない日」の日の選択（⑮）：中央の小さなポップアップ。入力画面（20）と同じ高さ。2 列 × 4 行、新しい日が左上。選んだ日は文字色と地色を入れ替える */
+  .ns-layer { position: fixed; inset: 0; z-index: 20; }
+  .ns-scrim { position: absolute; inset: 0; background: var(--color-backdrop); }
+  .ns-pop { position: absolute; left: 16px; right: 16px; top: 50%; transform: translateY(-50%); box-sizing: border-box; max-height: calc(100% - 32px); overflow-y: auto; overscroll-behavior: contain; padding: 16px; border: 1px solid var(--color-field-border, var(--color-text)); border-radius: 12px; background: var(--color-bg); color: var(--color-text); font-size: var(--font-size); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); }
+  .ns-pop h3 { margin: 0 0 4px; font-size: 1.125em; }
+  .ns-lead { margin: 0 0 10px; font-size: 13px; color: var(--color-muted); }
+  .ns-days { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ns-day { display: flex; align-items: center; gap: 6px; box-sizing: border-box; min-height: 48px; padding: 0 10px; min-width: 0; text-align: left; font: inherit; border: 1px solid var(--color-field-border, var(--color-text)); background: var(--color-button-bg, var(--color-bg)); color: var(--color-text); cursor: pointer; }
+  .ns-day .ns-t { flex: 1; min-width: 0; font-size: 14px; }
+  .ns-day .ns-t i { display: block; min-height: 1.2em; font-style: normal; font-size: 11px; color: var(--color-muted); }
+  .ns-day .icon { flex: none; width: 22px; height: 22px; }
+  .ns-day.on { background: var(--color-text); color: var(--color-bg); }
+  .ns-day.on .ns-t i { color: inherit; }
+  .ns-day[aria-disabled='true'] { opacity: 0.5; cursor: default; }
+  .ns-summary { margin: 10px 0 0; min-height: 2.6em; font-size: 14px; }
+  .ns-pop .sheet-actions button[aria-disabled='true'] { opacity: 0.5; }
 }
+
+/* 「前回と同じ入力」のボタン：縦に並ぶ入力（群青の札・スマホの入力画面）では、幅いっぱいに伸ばさず左に寄せる */
+.entries .g-slip > .quick-row, .entries .sheet-form > .quick-row { align-self: flex-start; }
+
+/* プリセットのボタン（仕訳の入力の上。群青の札・基本の入力欄・「出さない」設定のときのスマホの入力画面）。間は 8px（群青の PC は 12px。gunjo-pc.css） */
+.entries .preset-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.entries .preset-label { font-size: 0.85em; color: var(--color-muted); }
+.entries .preset-row .preset-chip { margin: 0; }
+/* 反映したプリセットの記号：反転（aria-pressed）。色は、見た目ごとの文字色・地の色の入れ替え */
+.entries .preset-chip.on, .entries .copy-last.on { background: var(--color-text); color: var(--color-bg); }
+
+/* 前回と同じ入力（複製の絵）と今日は使っていない（円の絵＋文字）の 1 行 */
+.entries .quick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+.entries .quick-row > span { display: inline-flex; }
+
+/* ボタンの置き場所（新しい仕訳の枠の外）：枠（欄）の下。群青の札は札の下（gunjo-pc.css）、基本は入力の行の下、スマホの入力画面にはない（⑮：「＋」メニューへ移した）。入りきらなければ折り返す */
+.entries .quick-host { display: flex; flex-wrap: wrap; min-width: 0; margin: var(--space) 0 0; }
+.entries .quick-host .quick-row { flex: 0 1 auto; }
+
+/* 「プリセットに追加」（＋付きの星）：プリセットの行の最後。記号と同じ大きさで、縁を点線にして区別する（押した状態にはならない） */
+.entries .preset-row .preset-add { margin: 0; border-style: dashed; background: transparent; }

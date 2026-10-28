@@ -45,3 +45,28 @@
   /* 書き出し・読み込み：間は 8px */
   .settings .backup-row { display: flex; flex-wrap: wrap; gap: var(--space); }
 }
+
+/* 記帳 → プリセット：一覧（名前・内容の 1 行・上下・編集・削除）と、作る・直す欄。間は 8px */
+.settings .pset { display: flex; flex-wrap: wrap; gap: var(--space); align-items: center; margin: var(--space) 0; }
+.settings .pset input[inputmode] { width: 9em; }
+.settings .pset .error { flex: 1 1 100%; color: var(--color-error); }
+.settings ol.presets { padding-left: 0; list-style-position: inside; }
+.settings ol.presets li:has(> form) { list-style: none; }
+.settings .pset-line { display: block; margin: 2px 0 var(--space); }
+@media screen and (max-width: 959.98px), screen and (pointer: coarse) and (hover: none) {
+  .settings .pset > input[aria-label], .settings .pset > select { flex: 1 1 100%; min-width: 0; }
+  .settings .pset > input[inputmode] { width: auto; }
+  .settings .pset > button { flex: 1 1 calc(50% - var(--space) / 2); min-width: 0; }
+}
+
+/* プリセットの記号の選択（radiogroup。6 列）。選んだものは反転。ほかのプリセットが使っている記号には、小さい点（選べはする） */
+.settings .pset-pick-row { flex: 1 1 100%; min-width: 0; }
+:is(.settings, .entries) .pset-icons { display: grid; grid-template-columns: repeat(6, max-content); gap: 8px; justify-content: start; }
+:is(.settings, .entries) .pset-icon-cell { display: inline-flex; }
+:is(.settings, .entries) .pset-icon-opt { position: relative; }
+:is(.settings, .entries) .pset-icon-opt.on { background: var(--color-text); color: var(--color-bg); }
+:is(.settings, .entries) .pset-dot { position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.settings .pset-sym { display: inline-flex; vertical-align: middle; margin-right: 8px; }
+.settings .pset-sym .icon { width: 24px; height: 24px; }
+.settings .pset-full { color: var(--color-error); }
+.settings .pset-pick-row .note { display: block; margin-top: 6px; }

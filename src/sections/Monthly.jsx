@@ -1,11 +1,23 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import './balance.css'
 import '../print.css'
-import { monthReport, livingBalance, balanceSheet, balanceSheetColumns, profitLossRows, previousMonth, issuedLabel, formatYen, formatMoney, currencyUnit } from '../ledgerLogic.js'
+import { monthReport, livingBalance, balanceSheet, balanceTrend, balanceSheetColumns, profitLossRows, previousMonth, nextMonth, issuedLabel, formatYen, formatMoney, currencyUnit, roadDays, expenseBreakdown } from '../ledgerLogic.js'
+import { expenseBars } from '../monthlyView.js'
+import TrendLine from './TrendLine.jsx'
+import Tabs from './Tabs.jsx'
+import { panelDomId, tabDomId } from '../tabs.js'
 import { today } from '../today.js'
 import { t } from '../text.js'
 import { usePhone } from '../layout.js'
-import { Icon } from './Icon.jsx'
+import { useGunjoPc } from '../gunjoPc.js'
+import { useBasicPc } from '../basicPc.js'
+import { useBasicPhone } from '../basicPhone.js'
+import { useBandHost, useBandTop, useBandRoad } from './bandHost.js'
+import { signedYen } from './PageBand.jsx'
+import { loadNoSpendShape } from '../entryView.js'
+import MonthRoad from './MonthRoad.jsx'
+import { Icon, IconButton } from './Icon.jsx'
 
 const cls = (n) => (n < 0 ? 'neg' : '')
 
@@ -90,7 +102,7 @@ function BalanceSheetStack({ sheet }) {
 }
 
 // 生活費のやりくり（仕様 5.14）：数えた収入を1件ずつ（日付・科目・金額・先月入金／今月入金）、収入合計、支出合計。通常の表示だけ（印刷用表示には出さない）
-function LivingTable({ living, currency }) {
+function LivingTable({ living, currency, showDifference = false }) {
   const day = (date) => date.slice(5).replace('-', '/')
   const paid = (l) => t(l === 'next' ? 'living.prevPaid' : 'living.thisPaid')
   return (
@@ -105,6 +117,7 @@ function LivingTable({ living, currency }) {
         ))}
         <tr className="total"><td>{t('monthly.livingIncomeTotal')}</td><td className={cls(living.incomeTotal)}>{formatMoney(living.incomeTotal, currency)}</td><td /></tr>
         <tr className="total"><td>{t('monthly.livingExpenseTotal')}</td><td>{formatMoney(living.expenseTotal, currency)}</td><td /></tr>
+        {showDifference && <tr className="total"><td>{t('basicPc.difference')}</td><td className={cls(living.result)}>{formatMoney(living.result, currency)}</td><td /></tr>}
       </tbody>
     </table></div>
   )
@@ -129,6 +142,136 @@ function LivingList({ living, currency }) {
   )
 }
 
+// 群青の PC（見本 design-ref/gunjo-pc/E-monthly-p2.html。spec-design.md 8.2）の本文：左に費用の内訳（上位 5 科目＋その他）と収益の部、右に月の集計と生活費のやりくり、
+// 下に P/L・B/S の閉じた札（押すと開く。B/S が合わないときの印は、閉じていても見える）。計算は今までと同じ（monthReport・livingBalance・balanceSheet）
+function GunjoBody({ month, report, living, sheet, currency }) {
+  const adj = report.adjustment
+  const shares = expenseBreakdown(report.expense)
+  const maxRevenue = Math.max(0, ...report.revenue.map((r) => r.amount))
+  const row = (key, name, amount, bar, pct, navy) => (
+    <div className="g-brow" key={key}>
+      <span className="name">{name}</span>
+      <div className="g-brow-bar"><i className={navy ? 'navy' : ''} style={{ width: `${bar}%` }} /></div>
+      <span className="value">{formatYen(amount)}</span>
+      <span className="pct">{pct}</span>
+    </div>
+  )
+  const day = (date) => date.slice(5).replace('-', '/')
+  const paid = (l) => t(l === 'next' ? 'living.prevPaid' : 'living.thisPaid')
+  return (
+    <div className="g-mon-body">
+      <div className="g-mon-main">
+        <h2 className="g-h">{t('monthly.expenseTitle')}<small lang="en">{t('monthly.expenseEn')}</small></h2>
+        {shares.items.length === 0 ? <p className="note">{t('monthly.expenseNone')}</p> : shares.items.map((it) => row(it.id, it.other ? t('monthly.others') : <span className="user-text">{it.name}</span>, it.amount, it.bar, `${it.share.toFixed(1)}%`))}
+        {report.revenue.length > 0 && <>
+          <h2 className="g-h g-h2">{t('monthly.revenueTitle')}<small lang="en">{t('monthly.revenueEn')}</small></h2>
+          {report.revenue.map((r) => row(r.account.id, <span className="user-text">{r.account.name}</span>, r.amount, maxRevenue > 0 ? Math.max(0, Math.round((r.amount / maxRevenue) * 1000) / 10) : 0, '', true))}
+        </>}
+      </div>
+      <div className="g-mon-side">
+        <section className="g-card">
+          <h2 className="g-h">{t('monthly.summaryTitle', { month })}<small lang="en">{t('monthly.summaryEn')}</small></h2>
+          <table><tbody>
+            <Line name={t('monthly.revenueTotal')} amount={report.revenueTotal} currency={currency} />
+            <Line name={t('monthly.expenseTotal')} amount={report.expenseTotal} currency={currency} />
+            {(adj.gain !== 0 || adj.loss !== 0) && <Line name={t('monthly.adjustmentLine')} amount={adj.net} currency={currency} />}
+            <tr className="sum"><td>{t('monthly.result')}</td><td className={cls(report.result)}>{formatMoney(report.result, currency)}</td></tr>
+          </tbody></table>
+          <p className="note">{t('monthly.noteSummary')}</p>
+          <h2 className="g-h g-h2">{t('monthly.livingTitle')}<small lang="en">{t('monthly.livingEn')}</small></h2>
+          <p className="note">{t('monthly.livingNote')}</p>
+          {living.items.length === 0 && <p className="note">{t('monthly.livingNone')}</p>}
+          <table><tbody>
+            {living.items.map((i, n) => (
+              <tr key={n}>
+                <td className="wrap">{day(i.date)} <span className="user-text">{i.account.name}</span> <span className="note">{paid(i.living)}</span></td>
+                <td className={cls(i.amount)}>{formatMoney(i.amount, currency)}</td>
+              </tr>
+            ))}
+            <Line name={t('monthly.livingIncomeTotal')} amount={living.incomeTotal} currency={currency} />
+            <Line name={t('monthly.livingExpenseTotal')} amount={living.expenseTotal} currency={currency} />
+            <tr className="sum"><td>{t('monthly.livingTitle')}</td><td className={living.result < 0 ? 'neg' : 'accent'}>{formatMoney(living.result, currency)}</td></tr>
+          </tbody></table>
+        </section>
+      </div>
+      <div className="g-mon-more">
+        <div className="g-fold">
+          <Section title={t('monthly.plTitle', { month })} extra={<small lang="en">{t('monthly.plEn')}</small>}>
+            <p className="note">{t('monthly.unit', { unit: currencyUnit(currency) })}</p>
+            <ProfitLossTable report={report} />
+          </Section>
+        </div>
+        <div className="g-fold">
+          <Section title={t('monthly.bsTitle', { month })} extra={<><small lang="en">{t('monthly.bsEn')}</small>{!sheet.balanced && <span className="value error">{t('monthly.bsUnbalancedBadge')}</span>}</>}>
+            <p className="note">{t('monthly.unit', { unit: currencyUnit(currency) })}</p>
+            <BalanceSheetTable sheet={sheet} />
+            {sheet.balanced ? <p className="note">{t('monthly.bsBalanced')}</p> : <p className="error">{t('monthly.bsUnbalanced')}</p>}
+            <p className="note">{t('monthly.bsNote')}</p>
+          </Section>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BasicMonthly({ accounts, entries, currency, month, setMonth, report, living, sheet, phone, onPrint }) {
+  const [metric, setMetric] = useState('netTotal')
+  const [tab, setTab] = useState('trend')
+  const metrics = [
+    { id: 'assetTotal', label: t('monthly.trendAsset') },
+    { id: 'liabilityTotal', label: t('monthly.trendLiability') },
+    { id: 'netTotal', label: t('monthly.trendNet') },
+  ]
+  const trendRows = month ? balanceTrend(accounts, entries, month, today()) : []
+  const current = trendRows[0]?.month === month ? trendRows[0] : null
+  const previous = current && trendRows[1]
+  const expenses = report ? expenseBars(report.expense) : null
+  const money = (n) => formatMoney(n, currency)
+  const bars = (rows, rest = false) => rows.map((r) => <div className={`b-expense-row${rest ? ' b-expense-rest' : ''}`} key={r.account.id}>
+    <span className="user-text">{r.account.name}</span><span className="b-bar-track"><span className="b-bar-fill" style={{ width: `${r.bar}%` }} /></span><span className={cls(r.amount)}>{money(r.amount)}</span>
+  </div>)
+  const summary = report && <section className="b-month-card b-month-summary">
+    {phone ? <div className="b-month-heading"><h3>{t('monthly.currentResult')}</h3><strong className={`b-result ${cls(report.result)}`}>{money(report.result)}</strong></div> : <><h3>{t('monthly.currentResult')}</h3><p className="b-result-label">{t('monthly.result')}</p><strong className={`b-result ${cls(report.result)}`}>{money(report.result)}</strong></>}
+    {!phone && <div className="b-summary-bars">{bars(expenseBars([{ account: { id: 'income', name: t('monthly.income') }, amount: report.revenueTotal }, { account: { id: 'expense', name: t('monthly.expense') }, amount: report.expenseTotal }]).top)}</div>}
+  </section>
+  const spending = report && <section className="b-month-card b-month-spending">
+    <div className="b-month-heading"><h3>{t('monthly.expense')}</h3><strong className={cls(report.expenseTotal)}>{money(report.expenseTotal)}</strong></div>
+    {expenses.top.length ? bars(expenses.top) : <p className="note">{t('monthly.expenseNone')}</p>}
+    {expenses.rest.length > 0 && <details className="b-expense-more"><summary><span className="chev">›</span>{t('monthly.expenseRest', { count: expenses.rest.length, amount: money(expenses.restTotal) })}</summary>{bars(expenses.rest, true)}</details>}
+  </section>
+  const livingPart = living && <section className="b-month-card b-month-living">
+    <div className="b-month-heading"><h3>{t('monthly.livingTitle')}</h3><strong className={cls(living.result)}>{money(living.result)}</strong></div>
+    <p>{t('monthly.livingFormula', { income: money(living.incomeTotal), expense: money(living.expenseTotal) })}</p>
+    {living.items.length === 0 ? <p className="note">{t('monthly.livingNone')}</p> : phone ? <LivingList living={living} currency={currency} /> : <LivingTable living={living} currency={currency} />}
+    {phone ? <details className="b-living-difference"><summary>{t('monthly.livingDifferenceTitle')}</summary><p>{t('monthly.livingDifference')}</p></details> : <p className="note">{t('monthly.livingDifference')}</p>}
+  </section>
+  const table = <div className="table-box b-trend-table"><table><thead><tr><th>{t('common.month')}</th><th>{t('monthly.trendAsset')}</th><th>{t('monthly.trendLiability')}</th><th>{t('monthly.trendNet')}</th>{!phone && <><th>{t('monthly.trendEarmark')}</th><th>{t('monthly.trendResult')}</th></>}</tr></thead><tbody>{trendRows.map((r) => <tr key={r.month}><td>{r.month}</td><td className={cls(r.assetTotal)}>{money(r.assetTotal)}</td><td className={cls(r.liabilityTotal)}>{money(r.liabilityTotal)}</td><td className={cls(r.netTotal)}>{money(r.netTotal)}</td>{!phone && <><td className={cls(r.earmarkTotal)}>{money(r.earmarkTotal)}</td><td className={cls(r.result)}>{money(r.result)}</td></>}</tr>)}</tbody></table></div>
+  const trend = <section className="b-month-card b-month-trend">{!phone && <div className="b-month-heading"><h3>{t('monthly.trend')}</h3><span className="note">{t('monthly.trendNote')}</span></div>}
+    {current ? <>{phone ? <p className="b-trend-net"><span>{t('monthly.trendNetMonth', { month: Number(month.slice(5)) })}</span><strong className={`b-result ${cls(current.netTotal)}`}>{money(current.netTotal)}</strong></p> : <><p>{t('monthly.trendNetMonth', { month: Number(month.slice(5)) })}</p><strong className={`b-result ${cls(current.netTotal)}`}>{money(current.netTotal)}</strong></>}<p className={`b-trend-change ${previous ? cls(current.netTotal - previous.netTotal) : 'note'}`}>{previous ? t('monthly.trendChange', { amount: money(current.netTotal - previous.netTotal) }) : t('monthly.trendNoPrevious')}</p>
+      <div className="b-trend-switch">{metrics.map((m) => <button type="button" key={m.id} aria-pressed={metric === m.id} onClick={() => setMetric(m.id)}>{m.label}</button>)}</div>
+      <TrendLine rows={[...trendRows].reverse()} metric={metric} label={metrics.find((m) => m.id === metric).label} currency={currency} phone={phone} />
+      {!phone && <details><summary>{t('monthly.trendTable')}</summary>{table}</details>}
+    </> : <p className="note">{t('monthly.trendEmpty')}</p>}
+  </section>
+  return <div className={phone ? 'report b-phone-p5 b-phone-monthly b-month-redesign' : 'report b-page b-monthly b-month-redesign'}>
+    <div className="b-month-header"><h2>{t('monthly.title')}</h2><div className="b-month-picker">
+      <button type="button" aria-label={t('entries.monthPrev')} disabled={!month} onClick={() => setMonth(previousMonth(month))}>‹</button>
+      <input type="month" aria-label={t('common.month')} value={month} onChange={(e) => setMonth(e.target.value)} />
+      <button type="button" aria-label={t('entries.monthNext')} disabled={!month} onClick={() => setMonth(nextMonth(month))}>›</button>
+      {!phone && <button type="button" onClick={() => setMonth(today().slice(0, 7))}>{t('common.thisMonth')}</button>}
+    </div></div>
+    {!month ? <p className="note">{t('common.chooseMonth')}</p> : <>
+      {phone ? <><div className="b-month-combined">{summary}{spending}</div><Tabs prefix="monthly-basic" label={t('monthly.trend')} tabs={[{ id: 'trend', title: t('monthly.trend') }, { id: 'living', title: t('monthly.livingTitle') }]} current={tab} onChange={setTab} /><div role="tabpanel" id={panelDomId('monthly-basic', tab)} aria-labelledby={tabDomId('monthly-basic', tab)}>{tab === 'trend' ? trend : livingPart}</div></> : <div className="b-month-columns"><div>{summary}{livingPart}{spending}</div><div>{trend}</div></div>}
+      <details className="b-month-books"><summary><span className="chev">›</span><span><b>{t('monthly.books')}</b><small>{t('monthly.booksDescription')}</small></span></summary>
+        {phone && <details><summary>{t('monthly.trendTable')}</summary>{table}</details>}
+        <Section title={t('monthly.plTitle', { month })}><p className="note">{t('monthly.unit', { unit: currencyUnit(currency) })}</p><ProfitLossTable report={report} /></Section>
+        <Section title={t('monthly.bsTitle', { month })} extra={!sheet.balanced && <span className="value error">{t('monthly.bsUnbalancedBadge')}</span>}><p className="note">{t('monthly.unit', { unit: currencyUnit(currency) })}</p>{phone ? <BalanceSheetStack sheet={sheet} /> : <BalanceSheetTable sheet={sheet} />}{sheet.balanced ? <p className="note">{t('monthly.bsBalanced')}</p> : <p className="error">{t('monthly.bsUnbalanced')}</p>}<p className="note">{t('monthly.bsNote')}</p></Section>
+        <div className="b-books-actions"><button type="button" onClick={() => setMonth(previousMonth(today()))}>{t('common.lastMonth')}</button><button type="button" onClick={onPrint}>{t('monthly.printView')}</button></div>
+      </details>
+    </>}
+  </div>
+}
+
 export default function Monthly({ data }) {
   const { accounts, entries } = data
   const currency = data.settings.currency
@@ -139,9 +282,54 @@ export default function Monthly({ data }) {
   const sheet = month ? balanceSheet(accounts, entries, month) : null
   const adj = report?.adjustment
   const living = month ? livingBalance(entries, accounts, month) : null
+  const gunjoPc = useGunjoPc()
+  const basicPc = useBasicPc()
+  const basicPhone = useBasicPhone()
+  const bandHost = useBandHost()
+  const bandTop = useBandTop()
+  const bandRoad = useBandRoad()
+
+  // 群青の PC の通常表示（印刷用表示は、今のまま）。月が未選択のときは、月の道も札も出さず、「月を選んでください」の一行だけ
+  if (gunjoPc && !printView) {
+    const shift = (d) => { const [y, m] = month.split('-').map(Number); const x = new Date(y, m - 1 + d, 1); setMonth(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`) }
+    const unit = currencyUnit(currency)
+    const m = month ? Number(month.slice(5)) : 0
+    const road = month ? roadDays(accounts, entries, month, today(), data.noSpendDays) : null
+    return (
+      <div className="report g-rep g-mon">
+        {bandTop && createPortal(
+          <div className="g-month">
+            <IconButton icon="chevRight" className="g-prev" label={t('entries.monthPrev')} disabled={!month} onClick={() => shift(-1)} />
+            <input type="month" aria-label={t('common.month')} value={month} onChange={(e) => setMonth(e.target.value)} />
+            <IconButton icon="chevRight" label={t('entries.monthNext')} disabled={!month} onClick={() => shift(1)} />
+          </div>, bandTop)}
+        {bandHost && createPortal(<>
+          {month && <div className="g-mnum" aria-hidden="true">{m}<span>{t('monthly.monthUnit')}</span></div>}
+          {month && (
+            <div className="g-res">
+              <div className="g-res-lab">{t('monthly.heroResult', { m })}</div>
+              <div className={`g-res-num${report.result < 0 ? ' neg' : ''}`}>{signedYen(report.result, formatYen)}<span className="g-res-unit">{unit}</span></div>
+              <div className="g-res-sub"><span>{t('monthly.revenueTotal')} <b>{formatYen(report.revenueTotal)}</b></span><span>{t('monthly.expenseTotal')} <b>{formatYen(report.expenseTotal)}</b></span></div>
+            </div>
+          )}
+          <div className="g-mact">
+            <button type="button" onClick={() => setMonth(today().slice(0, 7))}>{t('common.thisMonth')}</button>
+            <button type="button" onClick={() => setMonth(previousMonth(today()))}>{t('common.lastMonth')}</button>
+            <button type="button" onClick={() => setPrintView(true)}>{t('monthly.printView')}</button>
+          </div>
+        </>, bandHost)}
+        {bandRoad && road && createPortal(<MonthRoad road={road} currency={currency} shape={loadNoSpendShape()} />, bandRoad)}
+        {!month ? <p className="note">{t('common.chooseMonth')}</p> : <GunjoBody month={month} report={report} living={living} sheet={sheet} currency={currency} />}
+      </div>
+    )
+  }
+
+  if ((basicPc || basicPhone) && !printView) {
+    return <BasicMonthly accounts={accounts} entries={entries} currency={currency} month={month} setMonth={setMonth} report={report} living={living} sheet={sheet} phone={basicPhone} onPrint={() => setPrintView(true)} />
+  }
 
   return (
-    <div className={`report${printView ? ' print-view' : ''}`}>
+    <div className={`report${basicPhone ? ' b-phone-p5 b-phone-monthly' : ''}${printView ? ' print-view' : ''}`}>
       {printView ? <h2 className="print-title">{t('monthly.printTitle')}{month && t('monthly.inMonth', { month })}</h2> : <h2>{t('monthly.title')}</h2>}
       {printView && <p className="issued">{issuedLabel(today())}</p>}
       <div className="month-bar no-print">

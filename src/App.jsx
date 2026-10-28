@@ -9,9 +9,17 @@ import { getReturnTab, startLogin, modalOpen } from './driveStore.js'
 import { useDriveSync } from './useDriveSync.js'
 import Home from './sections/Home.jsx'
 import SideTabs from './sections/SideTabs.jsx'
+import PageBand from './sections/PageBand.jsx'
+import { BandHostContext, BandTopContext, BandRoadContext } from './sections/bandHost.js'
+
+// 群青の PC のホームの帯（メニューはホームでは出さない）
+const HOME_BAND = { label: 'home.title', en: 'home.titleEn', band: 'S' }
+import { useGunjoPc } from './gunjoPc.js'
+import { useBasicPc } from './basicPc.js'
 import { ConfirmContext, ConfirmDialog } from './sections/ConfirmDialog.jsx'
 import SaveLoadPanel from './sections/SaveLoadPanel.jsx'
 import ConflictDialog from './sections/ConflictDialog.jsx'
+import DriveBusy from './sections/DriveBusy.jsx'
 import './nav.css'
 import { loadData, saveData, exportJson, parseImport, needsMigration, isNewerData, migrate, autoRecord } from './storage.js'
 import { checkForNewBuild } from './pwa.js'
@@ -202,7 +210,7 @@ export default function App() {
   // データの移行画面が出ているときは、# に関係なく移行画面を出す（古い形のデータなので、# も読まない）。新しい版のデータのときも同じく、# を読まない
   const migrating = needsMigration(data)
   const newer = isNewerData(data)
-  const route = migrating || newer ? null : parseHash(hash, cardAccounts(data.accounts).map((a) => a.id))
+  const route = migrating || newer ? null : parseHash(hash, hash.startsWith('#/ledger/entries/') ? data.entries.map((e) => e.id) : [...cardAccounts(data.accounts).map((a) => a.id), 'adjust']) // 仕訳のタブの id は仕訳。クレカのタブの id はカード
   const canonical = route ? toHash(route) : null
   // 設定以外の画面へ移ったら、設定のタブは初めの（記帳）に戻す。ほかの画面から設定へのリンク（セーブ画面の「設定へ」）は、移る前に setSettingsTab で開くタブを決める
   const onSettingsScreen = route?.tab === 'settings'
@@ -300,6 +308,11 @@ export default function App() {
   const driveSync = useDriveSync({ data, skip: driveSkip, apply: applyRemote, restore: applyImported }) // 控えから戻す置き換えは、読み込みと同じ（ふつうの変更として、あとで上がる）
   // 食い違いの確認画面（4.4）：食い違いが見つかったとき、ほかの画面・入力が開いていなければ、自動で開く（そうでなければ、帯を押すと開く）。「あとで決める」で閉じても、帯は残る。解決すると閉じる
   const [conflictOpen, setConflictOpen] = useState(false)
+  const gunjoPc = useGunjoPc() // 群青の PC のときだけ、画面の上に帯（PageBand）を描く
+  const basicPc = useBasicPc() // 基本の PC のホームだけ、ヘッダーの左に「正解」を出す（入口のある画面は、縦タブの上の帯に出る）
+  const [bandHost, setBandHost] = useState(null) // 帯の中の、画面の要点を入れる場所
+  const [bandTop, setBandTop] = useState(null) // 帯の上の段の、ボタンを入れる場所
+  const [bandRoad, setBandRoad] = useState(null) // 帯 L の一番下の、月の道を入れる場所
   const conflictShown = useRef(null)
   const conflictKey = driveSync.conflict ? `${driveSync.conflict.kind}|${driveSync.conflict.theirsRev}` : null
   useEffect(() => {
@@ -312,6 +325,10 @@ export default function App() {
 
   const entry = route && NAV.find((e) => e.id === route.entry)
   const Screen = route && route.tab ? screens[route.tab] : null
+  const tabDef = entry && route.tab ? entry.groups.flatMap((g) => g.tabs).find((x) => x.id === route.tab) : null
+  const band = gunjoPc && !newer && !migrating ? (tabDef?.band ? tabDef : !entry ? HOME_BAND : null) : null // 帯を出す画面（nav.js の band。ホームも）
+
+  const adjustPage = band && route.tab === 'card' && route.detailId === 'adjust' // クレカ残高調整ページ：帯の名前だけ変える
 
   // 知らせ（書けない・つながらない・食い違いなどのとき）。1つの並び（notices）にまとめる：{ key, text, title, onPress }。出し場所（spec-mobile.md 第4章）：
   //   PC は右上の帯に並べる／スマホはメニューのある画面では上の帯の右端に「⚠ 件数」（押すと一覧）／ホーム・移行画面では中身の一番上に1つ1行
@@ -323,7 +340,7 @@ export default function App() {
     problem !== null && { key: 'autosave', text: t('save.autosaveFailed'), title: problem, onPress: retryAutosave },
     driveSync.kind && { key: 'drive', text: driveText[driveSync.kind], title: driveTitle[driveSync.kind], onPress: drivePress },
   ].filter(Boolean)
-  const notice = notices.length > 0 && <>{notices.map((n) => <button key={n.key} type="button" className="autosave-problem" title={n.title} onClick={n.onPress}>{n.text}</button>)}</>
+  const notice = notices.length > 0 && <>{notices.map((n) => <button key={n.key} type="button" className="autosave-problem" title={n.title} onClick={n.onPress}>{n.text}{gunjoPc && <small className="why">{n.title}</small>}</button>)}</>
   const noticeRows = notices.length > 0 && <div className="notice-rows">{notices.map((n) => <button key={n.key} type="button" className="autosave-problem notice-row" title={n.title} onClick={n.onPress}>{n.text}</button>)}</div>
   // 新しい版のお知らせ。PC は右上の帯、スマホは中身の一番上（上の帯のすぐ下。重ねずに流れの中に置くので、入力の欄を隠さない）
   const updateNotice = newBuild && !newer && (
@@ -337,12 +354,17 @@ export default function App() {
     <ConfirmContext.Provider value={confirm}>
     <div className="frame" key={language}>
       {entry &&<SideTabs entry={entry} currentTab={route.tab} onOpenPanel={openPanel} notices={notices} />}
-      <div className="main-col">
+      <BandHostContext.Provider value={band ? bandHost : null}>
+      <BandTopContext.Provider value={band ? bandTop : null}>
+      <BandRoadContext.Provider value={band ? bandRoad : null}>
+      <div className={`main-col${band ? ' has-band' : ''}`}>
+        {band && <PageBand name={adjustPage ? t('cardAdjust.title') : t(band.label)} en={adjustPage ? t('cardAdjust.titleEn') : band.en ? t(band.en) : ''} kind={band.band} hostRef={setBandHost} topRef={setBandTop} roadRef={setBandRoad} />}
         {/* 右上の書き出し・読み込みの帯。スマホの形では出さない（同じ機能は 設定 → データ。index.css） */}
         {!newer && <header>
+          {basicPc && !entry && <span className="b-brand">{t('home.title')}</span>}
           <div>
-            {updateNotice}
-            {notice}
+            {/* 群青の PC：知らせは、書き出し・読み込みの下に、縦に並べる（月の選びと重ならない。帯 S・L とも同じ場所。gunjo-pc.css の g-notices） */}
+            {gunjoPc ? <div className="g-notices">{updateNotice}{notice}</div> : <>{updateNotice}{notice}</>}
             <button onClick={doExport}>{t('app.export')}</button>
             <label>
               <input type="file" accept=".json" onChange={doImport} hidden />
@@ -377,8 +399,12 @@ export default function App() {
           )}
         </div>
       </div>
+      </BandRoadContext.Provider>
+      </BandTopContext.Provider>
+      </BandHostContext.Provider>
       {panel && <SaveLoadPanel key={panel} mode={panel} data={data} loadBlocked={Boolean(driveSync.conflict)} onClose={() => setPanel(null)} onToSettings={setSettingsTab} onLoad={async (r) => { await applyImported(r); setPanel(null) }} />}
       {request && <ConfirmDialog key={request.id} request={request} onAnswer={answer} />}
+      <DriveBusy />
       {conflictOpen && driveSync.conflict && <ConflictDialog key={conflictKey} kind={driveSync.conflict.kind} describe={driveSync.describe} resolve={driveSync.resolve} onClose={() => setConflictOpen(false)} onLogin={() => startLogin(onSettingsScreen ? settingsTab : null)} />}
     </div>
     </ConfirmContext.Provider>

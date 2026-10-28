@@ -1,6 +1,7 @@
 // 仕訳帳の純関数。お金の計算もここに置く（画面側では計算しない）。
 // 画面に出す文字（エラー文・行の名前など）は、辞書（lang/ja.js）から t() で取る。ラベルの表は、読むたびに t() を呼ぶ（読み込み時に固めない）。
 import { t, translate, dictionaries, getLanguage, LANGUAGES } from './text.js'
+import { PRESET_ICON_PICKER, PRESET_ICON_DEFAULT } from './icons.js'
 
 export const TYPES = ['asset', 'liability', 'revenue', 'expense', 'equity']
 export const TYPE_LABELS = {
@@ -24,6 +25,10 @@ export const KINDS = ['normal', 'opening', 'adjustment']
 export const LIVING = ['same', 'next']
 // 生活費の月の決まり（livingMonth）を持つ科目：収益のうち、調整益を除いたもの
 export const hasLivingMonth = (account) => account?.type === 'revenue' && account.key !== 'adjust-gain'
+// 固定費の印（fixed。v10。docs/formulas.md）を持つ科目：費用のうち、調整損を除いたもの（調整損は日ごとの費用に入らない）
+export const hasFixed = (account) => account?.type === 'expense' && account.key !== 'adjust-loss'
+// 最初から固定費の初期科目（preset）と、移行で古い科目に付ける値。名前の一致では決めない（本人が作った「家賃」などは OFF から始まり、本人が ON にする）
+export const FIXED_PRESETS = ['phone']
 
 // 初期科目（仕様 6.5。どの国にもある科目だけ）。[名前の辞書のキー, type, role, preset, key, card（role が card のときだけ { closingDay, payDay }）]
 // 名前は言語ごとの辞書（accountName.*）から取る。preset は内部の印で、計算には使わない（計算は key で探す）。key を持つ4つは preset を持たない
@@ -104,6 +109,9 @@ export function applyRenames(accounts, ids, to, now = new Date().toISOString()) 
 
 // 計算で探す特別科目は、名前ではなく key で探す（改名しても壊れない）。削除・使わない設定・type変更は不可。
 export const SPECIAL_KEYS = ['opening', 'adjust-gain', 'adjust-loss', 'credit-card']
+export const ENTRY_PRESET_NAME_MAX = 20 // 仕訳プリセットの名前の長さの上限（文字数。新しく作る・直すときの入力の決まり。名前は空でもよい）
+export const ENTRY_PRESET_NAME_LOAD_MAX = 30 // 読み込みは、今までの v11 で保存された 30 字までの名前も受ける
+export const ENTRY_PRESET_MAX = 20 // 仕訳プリセットの件数の上限（追加を止める。読み込みは、これより多くても受ける）
 export const ENTRY_HIDDEN_KEYS = ['opening', 'adjust-gain', 'adjust-loss'] // 入力の選択肢から除く。クレカ未払いは除かない
 export const LEGACY_KEY_BY_NAME = { 開始残高: 'opening', 調整益: 'adjust-gain', 調整損: 'adjust-loss', クレカ未払い: 'credit-card' } // v2からの移行専用
 
@@ -118,6 +126,7 @@ export const newAccount = (name, type, role, now = new Date().toISOString(), key
     ...(type === 'liability' && { role: isCardRole ? 'card' : 'other' }),
     ...(isCardRole && { closingDay: card.closingDay, payDay: card.payDay }),
     ...(hasLivingMonth({ type, key }) && { livingMonth: 'same' }), // 新しい収益の科目は「受け取った月の生活費」
+    ...(hasFixed({ type, key }) && { fixed: FIXED_PRESETS.includes(preset) }), // 新しい費用の科目は固定費でない（初期科目の通信費だけ固定費）
     ...(key && { key }),
     ...(preset && { preset }),
     active: true,
@@ -169,11 +178,12 @@ export function validateAccountName(name, accounts, selfId) {
 // type を変えたら role を整える（asset は role 必須、liability は other、ほかは role なし）。締め日・引き落とし日は消える。
 // 収益にしたら生活費の月の決まりは same、収益から変えたら消える（区分を変えられるのは仕訳のない科目だけなので、仕訳には影響しない）
 export function changeType(account, type, role, now = new Date().toISOString()) {
-  const { role: _old, closingDay: _closing, payDay: _pay, livingMonth: _living, ...rest } = account
+  const { role: _old, closingDay: _closing, payDay: _pay, livingMonth: _living, fixed: _fixed, ...rest } = account
   return {
     ...rest, type,
     ...(type === 'asset' && { role: role ?? 'other' }), ...(type === 'liability' && { role: 'other' }),
     ...(hasLivingMonth({ type, key: account.key }) && { livingMonth: 'same' }),
+    ...(hasFixed({ type, key: account.key }) && { fixed: false }), // 費用にしたら固定費でない、費用から変えたら消える
     updatedAt: now,
   }
 }
@@ -232,6 +242,10 @@ export function addLiving(accounts, entries) {
     e.kind === 'normal' && e.living === undefined && livingAccount(nextAccounts, e.debitId, e.creditId) ? { ...e, living: 'same' } : e)
   return { accounts: nextAccounts, entries: nextEntries }
 }
+
+// v9 → v10：費用の科目（調整損を除く）に fixed を付ける（preset が FIXED_PRESETS なら true、ほかは false）。持っているものは変えない。元の配列は変えない
+export const addFixed = (accounts) =>
+  accounts.map((a) => (hasFixed(a) && a.fixed === undefined ? { ...a, fixed: FIXED_PRESETS.includes(a.preset) } : a))
 
 // ---- 仕訳の入力・一覧 ----
 
@@ -300,9 +314,26 @@ export const entriesOfMonth = (entries, month) =>
     .filter((e) => e.date.startsWith(month))
     .sort(byDateThenCreated)
 
-// 最後に作成した normal の仕訳の貸方。なければ ''
+// 最後に作成した normal の仕訳（createdAt が一番新しいもの。同じなら、並びの後ろのほう）。なければ null。開始残高・残高調整は対象外。
+// subscriptions を渡すと、定期支払いの自動記入でできた仕訳（名前＝メモ・借方・貸方・金額が、定期支払いの 1 件と同じ）は飛ばす（自分で入れた「前回」を元にするため）
+export const lastNormalEntry = (entries, subscriptions = []) =>
+  entries
+    .filter((e) => e.kind === 'normal' && !subscriptions.some((s) => s.name === e.memo && s.debitId === e.debitId && s.creditId === e.creditId && s.amount === e.amount))
+    .reduce((last, e) => (!last || e.createdAt >= last.createdAt ? e : last), null)
+
+// 最後に作成した normal の仕訳の貸方。なければ ''（定期支払いの自動記入も数える）
 export const lastCreditId = (entries) =>
   entries.filter((e) => e.kind === 'normal').reduce((last, e) => (!last || e.createdAt >= last.createdAt ? e : last), null)?.creditId ?? ''
+
+// 「前回と同じ入力」：入力欄に入れる値（日付は入れない）。今は選べない科目（使わない設定・なくなった）の側は ''。
+// 生活費の月は、元の選び方を、収益の科目がまだ使われているときだけ残す。なければ科目の決まり。金額は文字
+export function copyInputFromEntry(entry, accounts) {
+  const usable = new Set(entryAccountOptions(accounts).map((a) => a.id))
+  const debitId = usable.has(entry.debitId) ? entry.debitId : ''
+  const creditId = usable.has(entry.creditId) ? entry.creditId : ''
+  const keep = entry.living && livingAccount(accounts, debitId, creditId) !== undefined
+  return { debitId, creditId, amount: String(entry.amount), memo: entry.memo, living: keep ? entry.living : defaultLiving(accounts, debitId, creditId) }
+}
 
 export const formatYen = (n) => n.toLocaleString('ja-JP') // 表示専用。計算には使わない。数字の桁区切りだけ（通貨の文字は付けない）
 // 金額の後ろに通貨の文字を付ける（1,000円・1,000엔・1,000원）。数字は変わらない。通貨が分からないとき（古いデータ）は円
@@ -326,6 +357,33 @@ export function groupEntriesByDate(entries, order = 'asc') {
     else groups.push({ date: e.date, entries: [e] })
   }
   return order === 'desc' ? groups.reverse() : groups
+}
+
+// 日付の枠（groupEntriesByDate の古い順の結果）を、10 件ずつのグループにまとめる。月の中だけ（呼ぶ側が月の仕訳を渡す）。
+// 古い順に数えて、10 件目に達したら区切る。10 件目の日の仕訳は全部同じグループに入る（10 件より多くなることがある）。
+// 区切りは必ず古い順で決める：order が 'desc' のときは、グループの並びと、グループの中の枠の並びだけを逆にする（中身は同じ）。
+// 見出しの材料：from・to（日付の範囲）、count（仕訳の件数）、total（費用の合計。月の道・日の見出しの計と同じ数え方）、
+// max（1 件の費用の最高額。収入・振替・費用でない仕訳は含めず、費用がなければ 0）。key は最初の日（古い順の並びで変わらない）
+export function groupByTens(dayGroups, accounts, order = 'asc') {
+  const expenseIds = new Set(accounts.filter((a) => a.type === 'expense' && a.key !== 'adjust-loss').map((a) => a.id))
+  const spent = (e) => (e.kind !== 'normal' ? 0 : (expenseIds.has(e.debitId) ? e.amount : 0) - (expenseIds.has(e.creditId) ? e.amount : 0))
+  const out = []
+  let cur = null
+  for (const g of dayGroups) {
+    if (!cur || cur.count >= 10) {
+      cur = { key: g.date, from: g.date, to: g.date, count: 0, total: 0, max: 0, days: [] }
+      out.push(cur)
+    }
+    cur.to = g.date
+    cur.days.push(g)
+    for (const e of g.entries) {
+      cur.count += 1
+      cur.total += spent(e)
+      cur.max = Math.max(cur.max, spent(e))
+    }
+  }
+  if (order === 'desc') { out.reverse(); for (const o of out) o.days = [...o.days].reverse() }
+  return out
 }
 
 // ---- 開始残高 ----
@@ -433,17 +491,93 @@ export function typeTotals(rows, type) {
   return { debit: sum(own, (r) => r.debit), credit: sum(own, (r) => r.credit), balance: sum(own, (r) => r.balance) }
 }
 
+// 資産の積み上げ棒（群青の PC の残高。spec-design.md 8.2）。rows は accountBalances の rows。画面に出る資産の科目（使っている、または使った）だけを見る
+// items：残高が 0 より大きい科目（棒に出す。share は合計に対する割合で、小数第 1 位まで四捨五入。足して 100.0 にならなくてもよい）
+// negatives：残高がマイナスの科目（棒に出さず、凡例にだけ出す）。残高 0 の科目はどちらにも入れない（表にだけ出る）
+// 棒に出す科目の合計（total）が 0 以下のときは、items を空にする（棒を出さない。月次の割合と同じ決まり）
+export function assetShares(rows) {
+  const own = rows.filter((r) => r.account.type === 'asset' && (r.account.active || r.used))
+  const total = sum(own.filter((r) => r.balance > 0), (r) => r.balance)
+  const pick = (r) => ({ id: r.account.id, name: r.account.name, balance: r.balance })
+  const items = total > 0 ? own.filter((r) => r.balance > 0).map((r) => ({ ...pick(r), share: Math.round((r.balance / total) * 1000) / 10 })) : []
+  return { total, items, negatives: own.filter((r) => r.balance < 0).map(pick) }
+}
+
+// 月次（群青の PC）の費用の内訳：monthReport の expense（多い順）のうち、金額が 0 より大きい科目だけを見る。
+// 上位 5 科目と、残り全部を足した「その他」（other: true。6 科目以上のときだけ）。share は、見る科目の合計に対する割合（小数第 1 位）。bar は、一番大きい行を 100 とした棒の長さ（%）
+// 合計が 0 以下（費用なし・返品だけなど）のときは items を空にする
+export function expenseBreakdown(expense, top = 5) {
+  const own = expense.filter((r) => r.amount > 0)
+  const total = sum(own, (r) => r.amount)
+  if (total <= 0) return { total: 0, items: [] }
+  const rows = own.slice(0, top).map((r) => ({ id: r.account.id, name: r.account.name, amount: r.amount }))
+  if (own.length > top) rows.push({ id: 'other', name: null, amount: sum(own.slice(top), (r) => r.amount), other: true })
+  const max = Math.max(...rows.map((r) => r.amount))
+  return { total, items: rows.map((r) => ({ ...r, share: Math.round((r.amount / total) * 1000) / 10, bar: Math.round((r.amount / max) * 1000) / 10 })) }
+}
+
+// 資産 − 負債（残高の画面の札。typeTotals の資産の残高合計 − 負債の残高合計。貸借対照表の純資産ではない）
+export const assetLiabilityGap = (rows) => typeTotals(rows, 'asset').balance - typeTotals(rows, 'liability').balance
+
+// ---- 借りているお金（loans。v12）の計算 ----
+
+// その月の利率と返済額。rateHistory のうち from が月以前で一番新しい行。なければ loan 自身の rate・payment（はじめの値）
+export function loanTermAt(loan, month) {
+  const hit = loan.rateHistory.filter((x) => x.from <= month).sort((a, b) => (a.from < b.from ? 1 : -1))[0]
+  return hit ?? loan
+}
+
+const LOAN_MONTH_LIMIT = 600 // 50 年。これを超えても終わらないものは「終わりの月なし」
+
+// 返す予定（今の利率での見込み。銀行の計算規則は真似しない）。balance は今の残り、fromMonth は最初に返す月（'YYYY-MM'）。
+// 毎月：利息 ＝ 残り × 年利 ÷ 12（円未満は切り捨て。rate は 1/100 %）、元金 ＝ 返済額 − 利息。最後の月は、残り＋利息だけ返す。
+// 返す形：{ rows: [{ month, payment, interest, principal, balance（返したあとの残り） }], endMonth（最後に返す月）, endless }
+// 終わらない（endless: true・endMonth は null）：返済額が利息以下（0 を含む）で残りが減らない月が来たとき、または 600 か月を超えたとき。rows はそこまで。
+// 残りがすでに 0 以下：rows は空、endMonth は null、endless は false
+export function loanSchedule(loan, balance, fromMonth) {
+  const rows = []
+  let left = balance
+  let month = fromMonth
+  if (!(left > 0)) return { rows, endMonth: null, endless: false }
+  while (rows.length < LOAN_MONTH_LIMIT) {
+    const term = loanTermAt(loan, month)
+    const interest = Math.floor((left * term.rate) / 120000)
+    if (term.payment <= interest) return { rows, endMonth: null, endless: true }
+    const payment = Math.min(term.payment, left + interest)
+    left -= payment - interest
+    rows.push({ month, payment, interest, principal: payment - interest, balance: left })
+    if (left <= 0) return { rows, endMonth: month, endless: false }
+    month = nextMonth(month)
+  }
+  return { rows, endMonth: null, endless: true }
+}
+
+// その月に返す額（自由に使える額から引く額）。月初から引く。引かない（0）のは次のとき：残りが 0 以下、奨学金で返し始める月より前、その月にこの借入の科目への返済の仕訳（借方）がすでにある（返した分は残高と現金に出ているので、二重に引かない）
+// 残りが少ないときは、残り＋その月の利息まで。entries は全仕訳、balance はこの借入の科目の今の残り
+export function loanDue(loan, balance, entries, month) {
+  if (!(balance > 0)) return 0
+  if (loan.repayFrom !== undefined && month < loan.repayFrom) return 0
+  if (entries.some((e) => e.debitId === loan.accountId && e.date.slice(0, 7) === month)) return 0
+  const term = loanTermAt(loan, month)
+  return Math.min(term.payment, balance + Math.floor((balance * term.rate) / 120000))
+}
+
 // 自由に使える額 ＝ role が cash の資産の残高合計 − 負債の残高合計（取り分け・その他の資産は含めない。使わない科目も含める）
-// items：画面に並べる内訳（現金類のうち残高が0でないもの。負債があるときは、最後に「負債」を負の値で足す）
-export function freeAmount(accounts, entries) {
+// loans（省略可）があるときは、借入の科目の残高全体は負債の合計から外し、代わりに month の返済額（loanDue）だけを引く。loans が空（省略）なら、今までと同じ値
+// items：画面に並べる内訳（現金類のうち残高が0でないもの。負債があるときは「負債」を負の値で、借入の返済があるときは最後に「借入の返済」を負の値で足す）
+export function freeAmount(accounts, entries, loans = [], month = '') {
   const { rows } = accountBalances(accounts, entries)
   const cash = rows.filter((r) => r.account.type === 'asset' && r.account.role === 'cash')
   const cashTotal = sum(cash, (r) => r.balance)
-  const liabilityTotal = sum(rows.filter((r) => r.account.type === 'liability'), (r) => r.balance)
+  const loanIds = new Set(loans.map((l) => l.accountId))
+  const liabilityTotal = sum(rows.filter((r) => r.account.type === 'liability' && !loanIds.has(r.account.id)), (r) => r.balance)
+  const due = sum(loans, (l) => loanDue(l, rows.find((r) => r.account.id === l.accountId)?.balance ?? 0, entries, month))
   const items = cash.filter((r) => r.balance !== 0).map((r) => ({ id: r.account.id, name: r.account.name, balance: r.balance }))
   if (liabilityTotal !== 0) items.push({ id: 'liability', name: TYPE_LABELS.liability, balance: -liabilityTotal })
-  return { total: cashTotal - liabilityTotal, cashTotal, liabilityTotal, items }
+  if (due !== 0) items.push({ id: 'loans', name: t('loans.dueItem'), balance: -due })
+  return { total: cashTotal - liabilityTotal - due, cashTotal, liabilityTotal, loanDue: due, items }
 }
+
 
 // ---- クレカ（role が card の負債。カードごとに締め日・引き落とし日を持つ）----
 // today・month は呼ぶ側から渡す。日付は subscriptionDate で作る（その月にない日は月末日）。使わない設定のカードも含める
@@ -466,9 +600,15 @@ export function closingDateOfEntry(date, closingDay) {
   return date <= closing ? closing : subscriptionDate(nextMonth(date.slice(0, 7)), closingDay)
 }
 
+// 確定分の調整の目印：残高調整（kind が adjustment）で、メモがこの字のもの（クレカ残高調整ページが付ける。調整の仕訳は編集できないので変わらない）。
+// 辞書は読まず、字を固定する（辞書の言い回しが後で変わっても、保存済みのメモと食い違わないため）。字を足すときは、古い字を残す
+export const CLOSED_FIX_MEMOS = ['確定分', '확정분']
+export const isClosedFix = (e) => e.kind === 'adjustment' && CLOSED_FIX_MEMOS.includes(e.memo)
+
 // カード1枚の計算。card でない科目・存在しない id は null
-// unbilled（未請求の利用額）＝最後の締め日より後の貸方合計（opening は除く。adjustment は含む）。next（次の引き落とし分）＝残高 − unbilled
-// periods：請求期間ごとの利用額 [{ closingDate, amount }]（締め日の新しい順。利用のある期間だけ）
+// 数える仕訳（符号つき）：貸方＝カード（opening は除く。adjustment は含む）は ＋、借方＝カードの adjustment は −。借方＝カードの normal（返済・返品）は数えない
+// unbilled（未請求の利用額）＝最後の締め日より後の合計。確定分の調整（isClosedFix）は、日付に関係なく最後の締め日の期に入り、unbilled には入らない。next（次の引き落とし分）＝残高 − unbilled
+// periods：請求期間ごとの利用額 [{ closingDate, amount }]（締め日の新しい順。合計が 0 でない期間だけ）
 export function cardReport(accounts, entries, accountId, today) {
   const account = accounts.find((a) => a.id === accountId)
   if (!account || !isCard(account)) return null
@@ -478,12 +618,14 @@ export function cardReport(accounts, entries, accountId, today) {
   const byPeriod = {}
   let unbilled = 0
   for (const e of entries) {
-    if (e.creditId !== accountId || e.kind === 'opening') continue
-    if (e.date > lastClosing) unbilled += e.amount
-    const closing = closingDateOfEntry(e.date, closingDay)
-    byPeriod[closing] = (byPeriod[closing] ?? 0) + e.amount
+    const amount = e.creditId === accountId && e.kind !== 'opening' ? e.amount : e.debitId === accountId && e.kind === 'adjustment' ? -e.amount : 0
+    if (amount === 0) continue
+    const fix = isClosedFix(e)
+    if (!fix && e.date > lastClosing) unbilled += amount
+    const closing = fix ? lastClosing : closingDateOfEntry(e.date, closingDay)
+    byPeriod[closing] = (byPeriod[closing] ?? 0) + amount
   }
-  const periods = Object.entries(byPeriod).map(([closingDate, amount]) => ({ closingDate, amount })).sort((a, b) => b.closingDate.localeCompare(a.closingDate))
+  const periods = Object.entries(byPeriod).filter(([, amount]) => amount !== 0).map(([closingDate, amount]) => ({ closingDate, amount })).sort((a, b) => b.closingDate.localeCompare(a.closingDate))
   return { account, closingDay, payDay, balance, lastClosing, unbilled, next: balance - unbilled, payDate: payDateOf(lastClosing, payDay), periods }
 }
 
@@ -513,10 +655,12 @@ export function periodRows(periods, lastClosing, payDay) {
 
 export const cardReports = (accounts, entries, today) => cardAccounts(accounts).map((a) => cardReport(accounts, entries, a.id, today))
 
-// 全カード合計：暦月（1日〜末日）の利用額を、すべてのカードで足す（opening は除く。adjustment は含む）。締め日には関係しない
+// 全カード合計：暦月（1日〜末日）の利用額を、すべてのカードで足す（opening は除く。貸方＝カードの adjustment は含み、借方＝カードの adjustment は引く）。締め日には関係しない
+// 確定分の調整（isClosedFix）は、その月の利用ではないので、増減どちらも数えない
 export function cardMonthTotal(accounts, entries, month) {
   const ids = new Set(cardAccounts(accounts).map((a) => a.id))
-  return { month, amount: sum(entries.filter((e) => ids.has(e.creditId) && e.kind !== 'opening' && e.date.startsWith(month)), (e) => e.amount) }
+  const used = (e) => (ids.has(e.creditId) && e.kind !== 'opening' ? e.amount : ids.has(e.debitId) && e.kind === 'adjustment' ? -e.amount : 0)
+  return { month, amount: sum(entries.filter((e) => e.date.startsWith(month) && !isClosedFix(e)), used) }
 }
 
 // 締め日・引き落とし日の入力：半角の 1〜31 だけ（先頭0・小数・全角・空・文字はエラー）。label は「締め日」「引き落とし日」
@@ -601,6 +745,77 @@ export function monthReport(accounts, entries, month) {
   return { month, revenue, expense, revenueTotal, expenseTotal, result: revenueTotal - expenseTotal, adjustment: { gain, loss, net: gain - loss } }
 }
 
+// ---- 1日あたりと、日ごとの費用（spec-ledger.md 5.17。作業34）----
+// 今日（'YYYY-MM-DD'）は呼ぶ側から渡す。どれも純関数（元のデータは変えない）
+
+// 今月の残りの日数（今日を含める）。月末の日は 1
+export const daysLeftInMonth = (today) => daysInMonth(today.slice(0, 7)) - Number(today.slice(8, 10)) + 1
+
+// 1日あたり：自由に使える額 ÷ 今月の残りの日数。端数は 0 に向かって切り捨て。マイナスはマイナスのまま（-0 は 0 にする）
+export const perDayAmount = (amount, today) => Math.trunc(amount / daysLeftInMonth(today)) + 0
+
+// 日ごとの費用（月の道・仕訳の日の見出しの「計」）。month は 'YYYY-MM'。
+// amount：その日の、通常の仕訳（kind が normal）のうち、費用の科目が借方の金額 − 貸方の金額（調整損は費用に入れない。クレカも仕訳の日付の日）。マイナスの日はマイナスのまま
+// bar：棒の長さの元になる値（マイナスの日は 0）。count：その日の通常の仕訳の数（開始残高・残高調整は数えない）
+// state：spend＝費用のある日／flat＝仕訳はあるが費用がない日（移動だけの日・返品などでマイナスの日）／
+//        blank＝入力していない過去の日／open＝まだ入力していない今日／future＝入力のない、これからの日
+// total：日ごとの amount の合計。monthReport の費用合計と一致する（調整の仕訳が調整益・調整損だけを使うため）
+export function dailyExpenses(accounts, entries, month, today) {
+  const expenseIds = new Set(accounts.filter((a) => a.type === 'expense' && a.key !== 'adjust-loss').map((a) => a.id))
+  const days = Array.from({ length: daysInMonth(month) }, (_, i) => ({ day: i + 1, date: `${month}-${String(i + 1).padStart(2, '0')}`, amount: 0, count: 0 }))
+  for (const e of entries) {
+    const d = e.kind === 'normal' && e.date.startsWith(month) ? days[Number(e.date.slice(8, 10)) - 1] : undefined
+    if (!d) continue
+    d.count += 1
+    d.amount += (expenseIds.has(e.debitId) ? e.amount : 0) - (expenseIds.has(e.creditId) ? e.amount : 0)
+  }
+  const list = days.map((d) => ({
+    ...d,
+    bar: Math.max(0, d.amount),
+    state: d.count > 0 ? (d.amount > 0 ? 'spend' : 'flat') : d.date > today ? 'future' : d.date === today ? 'open' : 'blank',
+    isToday: d.date === today,
+    isFuture: d.date > today,
+  }))
+  return { month, days: list, total: list.reduce((s, d) => s + d.amount, 0) }
+}
+
+// ---- 月の道の「光」と「固定費の線」（docs/formulas.md 11.5。区切り10の修正（6））----
+// 月の道の基準の下限（床）。通貨ごと。足すときは CURRENCIES と同じ所に足す
+export const ROAD_FLOOR = { JPY: 2000, KRW: 20000 }
+export const roadFloor = (currency) => ROAD_FLOOR[isCurrency(currency) ? currency : 'JPY']
+
+// 日ごとの費用を、固定費と変動費に分ける。判定は費用の科目の fixed だけ（前月との比較・日付の近さは見ない）。
+// dailyExpenses の日ごとの値に fixedAmount（fixed が true の費用の科目の、借方 − 貸方）と variableAmount（amount − fixedAmount）を足す。
+// fixedAmount + variableAmount = amount（月の合計も dailyExpenses の total と同じ）。dailyExpenses の返す値は変えない
+// noSpendDays（「使っていない日」の印。仕訳とは別）を渡すと、日ごとに noSpend（印があり、その日に通常の仕訳がない）を足す。数え方（amount・fixedAmount・variableAmount・total）には入らない
+export function roadDays(accounts, entries, month, today, noSpendDays = []) {
+  const road = dailyExpenses(accounts, entries, month, today)
+  const fixedIds = new Set(accounts.filter((a) => hasFixed(a) && a.fixed === true).map((a) => a.id))
+  const fixedByDay = road.days.map(() => 0)
+  for (const e of entries) {
+    if (e.kind !== 'normal' || !e.date.startsWith(month)) continue
+    fixedByDay[Number(e.date.slice(8, 10)) - 1] += (fixedIds.has(e.debitId) ? e.amount : 0) - (fixedIds.has(e.creditId) ? e.amount : 0)
+  }
+  return { ...road, days: road.days.map((d, i) => ({ ...d, fixedAmount: fixedByDay[i], variableAmount: d.amount - fixedByDay[i], noSpend: isNoSpendShown(noSpendDays, entries, d.date) })) }
+}
+
+// 光の長さの基準：max(変動費の中央値 × 3, 床)。中央値は、変動費が 0 より大きい日だけで取る（偶数個なら真ん中 2 つの平均）。
+// そういう日がない月は中央値 0（基準は床）。光の高さの割合は min(その日の変動費 ÷ base, 1)。days は roadDays の days、floor は roadFloor(通貨)
+// field に 'fixedAmount' を渡すと、固定費用の基準（固定費が 0 より大きい日の中央値の 3 倍と床）になる。変動費の基準とは別に作る（家賃が変動費の基準を引きずらない）
+export function roadScale(days, floor, field = 'variableAmount') {
+  const v = days.map((d) => d[field]).filter((x) => x > 0).sort((a, b) => a - b)
+  const mid = v.length >> 1
+  const median = v.length === 0 ? 0 : v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2
+  return { median, base: Math.max(median * 3, floor) }
+}
+
+// 光・柱の高さの割合：金額 ÷ 基準（roadScale の base）。0〜1（頭打ち。マイナスは 0）
+export const roadRatio = (amount, base) => Math.min(Math.max(amount, 0) / base, 1)
+
+// 費用の内訳の割合（月次）：金額 ÷ 費用の合計。小数第1位まで四捨五入（足して 100.0% にならなくてよい）。合計が 0 以下のときは null
+export const expenseShares = (report) =>
+  report.expense.map((r) => ({ account: r.account, amount: r.amount, percent: report.expenseTotal > 0 ? Math.round((r.amount / report.expenseTotal) * 1000) / 10 : null }))
+
 // B/S：その月の最終日までの全仕訳で計算する。assets / liabilities / equity は、その時点までに仕訳がある科目
 // 純資産 ＝ 純資産の科目の残高合計（開始残高など）＋ 累計の収支（全ての収益 − 全ての費用。調整益・調整損も含む）
 // balanced：資産合計 ＝ 負債合計 ＋ 純資産合計（合わないとき、画面にエラーを出す）
@@ -617,6 +832,22 @@ export function balanceSheet(accounts, entries, month) {
   const equityTotal = total('equity') + profit
   const liabilityEquityTotal = liabilityTotal + equityTotal
   return { month, assets, assetTotal, liabilities, liabilityTotal, equity, profit, equityTotal, liabilityEquityTotal, balanced: assetTotal === liabilityEquityTotal }
+}
+
+// 月末の資産・負債と、その月の収支。記録のない月より前は出さない。
+export function balanceTrend(accounts, entries, endMonth, today, count = 12) {
+  if (!entries.length || !endMonth || !today || count <= 0) return []
+  const first = entries.reduce((m, e) => e.date.slice(0, 7) < m ? e.date.slice(0, 7) : m, entries[0].date.slice(0, 7))
+  let month = endMonth < today.slice(0, 7) ? endMonth : today.slice(0, 7)
+  const result = []
+  while (month >= first && result.length < count) {
+    const sheet = balanceSheet(accounts, entries, month)
+    const rows = accountBalances(accounts, entries.filter((e) => e.date.slice(0, 7) <= month)).rows
+    const earmarkTotal = sum(rows.filter((r) => r.account.type === 'asset' && r.account.role === 'earmark'), (r) => r.balance)
+    result.push({ month, assetTotal: sheet.assetTotal, liabilityTotal: sheet.liabilityTotal, netTotal: sheet.assetTotal - sheet.liabilityTotal, earmarkTotal, result: monthReport(accounts, entries, month).result })
+    month = previousMonth(month)
+  }
+  return result
 }
 
 // B/S の勘定式の並び（左：資産の部、右：負債の部と純資産の部）。結果は balanceSheet のものを並べるだけ。
@@ -695,6 +926,42 @@ export function planAdjustment(accounts, entries, accountId, actualText, today, 
     amount: Math.abs(diff), memo: '', kind: 'adjustment', createdAt: now, updatedAt: now,
   }
   return { account, current, actual, diff, amount: entry.amount, kindLabel: gain ? t('sheet.gain') : t('sheet.loss'), entry, entries: [...entries, entry] }
+}
+
+// クレカ残高調整の計画（保存はしない）。確定分（cardReport の next）と今期（unbilled）を、それぞれ実際の額に合わせる。日付は today
+// closedText・openText：実際の額の入力（空は「変えない」）。currency：案内の金額の単位（settings.currency。省略は円）。差額 ＝ 実際 − 記録上。差額0の行は仕訳を作らない
+// 成功: { account, rows: [{ target, current, actual, diff, gain, kindLabel, entry }], entries }（rows は仕訳を作る行だけ。確定分が先）/ 全部空か差額0: { none: true, account } / 失敗: { error, target? }
+// 確定分の仕訳は、メモが closedMemo（isClosedFix の目印）。確定分を減らせるのは、最後の締め日の期の利用額まで
+export function planCardAdjustment(accounts, entries, cardId, { closedText = '', openText = '', currency }, today, now = new Date().toISOString()) {
+  if (!isDate(today)) return { error: t('error.dateWrong') }
+  const report = cardReport(accounts, entries, cardId, today)
+  if (!report) return { error: t('error.cardNotFound') }
+  const gainId = accounts.find((a) => a.key === 'adjust-gain')?.id
+  const lossId = accounts.find((a) => a.key === 'adjust-loss')?.id
+  if (!gainId || !lossId) return { error: t('error.adjustAccountsMissing') }
+  const closedLimit = report.periods.find((p) => p.closingDate === report.lastClosing)?.amount ?? 0
+  const rows = []
+  for (const [target, text, current, memo] of [['closed', closedText, report.next, t('cardAdjust.closedMemo')], ['open', openText, report.unbilled, '']]) {
+    if (text === '') continue
+    const parsed = parseOpeningAmount(text)
+    if (parsed.error) return { error: parsed.error, target }
+    const actual = parsed.amount
+    const diff = actual - current
+    if (diff === 0) continue
+    if (target === 'closed' && -diff > closedLimit) {
+      const [, m, d] = report.lastClosing.split('-').map(Number)
+      return { error: t('cardAdjust.errClosedOver', { closing: `${m}/${d}`, amount: formatMoney(Math.max(0, closedLimit), currency) }), target }
+    }
+    const gain = diff < 0 // 負債：減る＝調整益（借方＝カード）、増える＝調整損（貸方＝カード）
+    const entry = {
+      id: crypto.randomUUID(), date: today,
+      debitId: gain ? cardId : lossId, creditId: gain ? gainId : cardId,
+      amount: Math.abs(diff), memo, kind: 'adjustment', createdAt: now, updatedAt: now,
+    }
+    rows.push({ target, current, actual, diff, gain, kindLabel: gain ? t('sheet.gain') : t('sheet.loss'), entry })
+  }
+  if (rows.length === 0) return { none: true, account: report.account }
+  return { account: report.account, rows, entries: [...entries, ...rows.map((r) => r.entry)] }
 }
 
 // ---- 定期支払い（サブスク） ----
@@ -814,6 +1081,27 @@ export function ledgerBook(accounts, entries, accountId, month = '') {
   return { account, total: own.length, carryOver, rows, balance }
 }
 
+// 科目の月末残高と、残高を増やす・減らす取引の合計。
+export function accountTrend(accounts, entries, accountId, endMonth, count = 12) {
+  const account = accounts.find((a) => a.id === accountId)
+  const own = entries.filter((e) => (e.debitId === accountId || e.creditId === accountId) && e.date.slice(0, 7) <= endMonth)
+  if (!account || !endMonth || count <= 0 || own.length === 0) return []
+  const first = own.reduce((m, e) => e.date.slice(0, 7) < m ? e.date.slice(0, 7) : m, own[0].date.slice(0, 7))
+  const debitIncreases = account.type === 'asset' || account.type === 'expense'
+  const result = []
+  for (let month = endMonth; month >= first && result.length < count; month = previousMonth(month)) {
+    const book = ledgerBook(accounts, own, accountId, month)
+    let increase = 0
+    let decrease = 0
+    for (const row of book.rows) {
+      if ((row.debit !== null) === debitIncreases) increase += row.entry.amount
+      else decrease += row.entry.amount
+    }
+    result.push({ month, balance: book.balance, increase, decrease, amount: increase - decrease }) // amount：その月の金額（費用・収益の科目で見せる）
+  }
+  return result
+}
+
 // ---- お気に入りの科目（settings） ----
 // 特別科目（key が opening / adjust-gain / adjust-loss）は、ENTRY_HIDDEN_KEYS で判定する（名前では探さない）。today は引数で受ける
 
@@ -878,6 +1166,124 @@ export function validateFavoriteLimit(text, currentCount) {
 }
 
 export const setFavoriteLimit = (settings, side, limit) => ({ ...settings, favoriteLimits: { ...settings.favoriteLimits, [side]: limit } })
+
+// ---- 「使っていない日」（noSpendDays。v11。spec-ledger.md 5.18）----
+// 仕訳とは別の、日付だけの印。残高・月次・元帳・件数には入らない（計算の関数は noSpendDays を受け取らない）。
+export const NO_SPEND_BACK_DAYS = 7 // 押せるのは、今日と、過去この日数まで
+
+// 日付（YYYY-MM-DD）を日数だけずらす（UTC で数える）
+export function shiftDate(date, days) {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+// その日に、「使っていない」を付けられるか。{ ok: true } か { ok: false, reason }。
+// reason：invalid（日付が正しくない）・future（未来）・old（過去 7 日より前）・hasEntries（その日に通常の仕訳がある）
+export function canMarkNoSpend(entries, date, today) {
+  if (!isDate(date)) return { ok: false, reason: 'invalid' }
+  if (date > today) return { ok: false, reason: 'future' }
+  if (date < shiftDate(today, -NO_SPEND_BACK_DAYS)) return { ok: false, reason: 'old' }
+  if (entries.some((e) => e.kind === 'normal' && e.date === date)) return { ok: false, reason: 'hasEntries' }
+  return { ok: true }
+}
+
+// 付ける・外す（昇順・重複なし。同じ配列は変えない）
+export const markNoSpendDay = (days, date) => (days.includes(date) ? days : [...days, date].sort())
+export const unmarkNoSpendDay = (days, date) => days.filter((d) => d !== date)
+
+// 表示で、その日が「使っていない日」か。印があっても、その日に通常の仕訳があれば、仕訳を優先して false（印は消さない）
+export const isNoSpendShown = (days, entries, date) => days.includes(date) && !entries.some((e) => e.kind === 'normal' && e.date === date)
+
+// ---- 「使っていない日」の日の選択（スマホの「＋」メニューのポップアップ）----
+// 今日と過去 NO_SPEND_BACK_DAYS 日を、新しい日が先頭で並べる。state：blocked（通常の仕訳がある。選べない）・recorded（記録済み。選ぶと取り消し）・free（未記録。選ぶと記録）
+export function noSpendPickerDays(entries, noSpendDays, today) {
+  return Array.from({ length: NO_SPEND_BACK_DAYS + 1 }, (_, i) => {
+    const date = shiftDate(today, -i)
+    return { date, state: !canMarkNoSpend(entries, date, today).ok ? 'blocked' : noSpendDays.includes(date) ? 'recorded' : 'free' }
+  })
+}
+// 開いた時点の選択：今日が未記録なら今日だけ。今日に仕訳がある日は選べない。記録済みなら、押し間違いで取り消さないよう、選択なし
+export const initialNoSpendPick = (days) => (days[0]?.state === 'free' ? [days[0].date] : [])
+// 日を押す：選択のオン・オフ（複数可）。選べない日・一覧にない日は変えない
+export function toggleNoSpendPick(days, selected, date) {
+  const day = days.find((d) => d.date === date)
+  if (!day || day.state === 'blocked') return selected
+  return selected.includes(date) ? selected.filter((d) => d !== date) : [...selected, date]
+}
+// 「OK」で確定する結果：未記録の選択＝add（記録する日）、記録済みの選択＝remove（取り消す日）。どちらも昇順
+export function resolveNoSpendPick(days, selected) {
+  const of = (state) => days.filter((d) => d.state === state && selected.includes(d.date)).map((d) => d.date).sort()
+  return { add: of('free'), remove: of('recorded') }
+}
+// OK を押せるか：{ ok: true, kind: 'add' | 'remove' | 'mixed' } か { ok: false, reason: 'todayHasEntries'（今日に仕訳があり、何も選んでいない）| 'none'（何も選んでいない） }
+export function noSpendPickStatus(days, selected) {
+  const { add, remove } = resolveNoSpendPick(days, selected)
+  if (add.length === 0 && remove.length === 0) return { ok: false, reason: days[0]?.state === 'blocked' ? 'todayHasEntries' : 'none' }
+  return { ok: true, kind: remove.length === 0 ? 'add' : add.length === 0 ? 'remove' : 'mixed' }
+}
+// 確定結果を、保存する日の一覧に反映する（昇順・重複なし）
+export const applyNoSpendPick = (noSpendDays, { add, remove }) => remove.reduce(unmarkNoSpendDay, add.reduce(markNoSpendDay, noSpendDays))
+
+// ---- 仕訳プリセット（entryPresets。v11。docs は spec-ledger.md 5.18）----
+// 1 件：{ id, name, debitId, creditId, amount（null か 1 以上の整数）, memo, createdAt, updatedAt }。入力欄に、借方・貸方・金額・メモをまとめて入れる型
+
+// 入力の検証。名前は空でもよい（空なら、ボタンの title・読み上げに、借方→貸方の要約を使う）。icon は、作る画面の選択肢（PRESET_ICON_PICKER）か、初めの記号。渡さなければ初めの記号。
+// 借方・貸方は、仕訳の入力と同じ選択肢（3つの特別科目を除く）。currentIds は編集中のプリセットが今使っている科目。金額は空でもよい（null）
+export function validateEntryPresetInput({ name, icon = PRESET_ICON_DEFAULT, debitId, creditId, amountText, memo }, accounts, currentIds = []) {
+  const n = typeof name === 'string' ? name.trim() : ''
+  if (n.length > ENTRY_PRESET_NAME_MAX) return { error: t('error.presetNameTooLong', { max: ENTRY_PRESET_NAME_MAX }) }
+  const text = typeof amountText === 'string' ? amountText.trim() : ''
+  let amount = null
+  if (text !== '') {
+    const a = parseAmount(text)
+    if (a.error) return a
+    amount = a.amount
+  }
+  const ids = new Set(entryAccountOptions(accounts, currentIds).map((x) => x.id))
+  if (!ids.has(debitId) || !ids.has(creditId)) return { error: t('error.chooseDebitCredit') }
+  if (debitId === creditId) return { error: t('error.sameDebitCredit') }
+  if (!PRESET_ICON_PICKER.includes(icon) && icon !== PRESET_ICON_DEFAULT) return { error: t('error.presetIcon') }
+  return { name: n, icon, debitId, creditId, amount, memo: typeof memo === 'string' ? memo : '' }
+}
+
+// 追加できるか（20 件まで）。{ ok: true } か { ok: false, error }
+export const canAddEntryPreset = (list) => (list.length >= ENTRY_PRESET_MAX ? { ok: false, error: t('error.presetLimit', { max: ENTRY_PRESET_MAX }) } : { ok: true })
+
+// ボタンの title・読み上げに使う文：名前があれば名前、なければ「借方→貸方」（金額があれば、そのあとに金額）
+export function presetSummary(preset, accounts, currency) {
+  if (typeof preset.name === 'string' && preset.name.trim() !== '') return preset.name
+  const name = (id) => accounts.find((a) => a.id === id)?.name ?? ''
+  const debit = name(preset.debitId)
+  const credit = name(preset.creditId)
+  return preset.amount === null ? t('presets.summary', { debit, credit }) : t('presets.summaryAmount', { debit, credit, amount: formatMoney(preset.amount, currency) })
+}
+
+export const newEntryPreset = (input, now = new Date().toISOString()) => ({ id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now })
+export const editEntryPreset = (preset, input, now = new Date().toISOString()) => ({ ...preset, ...input, updatedAt: now })
+
+// 上下に動かす。delta は -1（上へ）か +1（下へ）。端・ないものは、同じ配列を返す
+export function moveEntryPreset(list, id, delta) {
+  const i = list.findIndex((p) => p.id === id)
+  const j = i + delta
+  if (i < 0 || j < 0 || j >= list.length) return list
+  const next = [...list]
+  ;[next[i], next[j]] = [next[j], next[i]]
+  return next
+}
+
+// 科目を削除するとき：その科目を使っているプリセット（確認画面の件数用）と、それを除いた配列
+export const presetsUsingAccount = (list, accountId) => list.filter((p) => p.debitId === accountId || p.creditId === accountId)
+export const removeAccountFromPresets = (list, accountId) => list.filter((p) => p.debitId !== accountId && p.creditId !== accountId)
+
+// 入力欄に入れる値（applyValues に渡す。日付は入れない）。借方・貸方・金額・メモを、そのプリセットのものに置き換える（金額なしは空）。
+// 今は選べない科目（使わない設定にした・なくなった）の側は ''。生活費の月は、科目の決まり
+export function presetToFormValues(preset, accounts) {
+  const usable = new Set(entryAccountOptions(accounts).map((a) => a.id))
+  const debitId = usable.has(preset.debitId) ? preset.debitId : ''
+  const creditId = usable.has(preset.creditId) ? preset.creditId : ''
+  return { debitId, creditId, amount: preset.amount === null ? '' : String(preset.amount), memo: preset.memo, living: defaultLiving(accounts, debitId, creditId) }
+}
 
 // 科目を削除したとき、借方・貸方の両方のお気に入りから外す（並びは保つ）
 export const removeAccountFromSettings = (settings, accountId) => ({
@@ -946,6 +1352,10 @@ export const budgetKindAllows = (kind, account) => Object.hasOwn(BUDGET_RULES, k
 export const budgetAccountOptions = (accounts, kind) => accounts.filter((a) => a.active && budgetKindAllows(kind, a))
 
 export const isBudgetMonth = (v) => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v)
+
+// 借りているお金（loans。v12）の種類と名前の文字数の上限。rate は年利の 1/100 %（1.25% は 125）
+export const LOAN_KINDS = ['scholarship', 'loan', 'other']
+export const LOAN_NAME_MAX = 30
 
 // その月の予算：その科目の予算のうち、適用開始月がその月以前で一番新しいもの（レコード）。なければ null
 export function effectiveBudget(budgets, accountId, month) {
@@ -1022,8 +1432,8 @@ export function budgetStatus(budgets, accounts, report, goalActuals, month) {
 // 残り・不足は budgetStatus（予算の表と同じ計算）。マイナス（超過）は0として扱う（実績が予算を超えた科目は、実績がもう自由に使える額から引かれているので、それ以上は引かない）。
 // 予算のない科目は見ない。使わない設定の科目も、その月の予算があれば対象。月初に大きく減るのは、意図した動き
 // 返す形：{ total（予算反映）, free（実際の額）, reserved（引いた額の合計）, items: [{ id, name, amount }]（上限の科目 → 目標の科目の順。引く額が0の科目は出さない） }
-export function budgetFreeAmount(accounts, entries, budgets, month) {
-  const free = freeAmount(accounts, entries).total
+export function budgetFreeAmount(accounts, entries, budgets, month, loans = []) {
+  const free = freeAmount(accounts, entries, loans, month).total
   const status = budgetStatus(budgets, accounts, monthReport(accounts, entries, month), goalActualMap(entries, accounts, budgets, month), month)
   const items = [
     ...status.limits.rows.map((r) => ({ id: r.account.id, name: r.account.name, amount: Math.max(0, r.remaining) })),
